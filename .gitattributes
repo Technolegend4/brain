@@ -1,0 +1,6 @@
+# 默认：文本文件统一用 LF 存储，避免跨平台换行符差异污染构建产物
+* text=auto eol=lf
+# PowerShell 脚本在 Windows 上按 CRLF 检出
+*.ps1 text eol=crlf
+# docx 等二进制文件不做换行符转换
+*.docx binary
