@@ -47,16 +47,25 @@ def parse_labels(path, t_end=None):
             if not row:
                 continue
             key = row[0].strip()
+            # "blinks" 标记行：损坏区间列表到此结束，把计数清零，避免其后的
+            # 眨眼数据行(同样是"两个数字"的格式)被误当成损坏区间
+            if key.lower().startswith("blink"):
+                n_corrupt = 0
+                continue
             if key.lower().startswith("corrupt"):
                 n_corrupt = int(float(row[1])) if len(row) > 1 and row[1].strip() else 0
             elif n_corrupt > 0:
-                end = float(row[1])
-                if end == -1:
-                    end = t_end if t_end is not None else float("inf")
-                corrupt.append((float(row[0]), end))
+                try:
+                    a, b = float(row[0]), float(row[1])
+                except (ValueError, IndexError):
+                    n_corrupt = 0
+                    if len(row) >= 2 and row[1].strip():
+                        blinks.append((float(row[0]), int(float(row[1]))))
+                    continue
+                if b == -1:
+                    b = t_end if t_end is not None else float("inf")
+                corrupt.append((a, b))
                 n_corrupt -= 1
-            elif key.lower().startswith("blink"):
-                continue
             else:
                 if len(row) >= 2 and row[1].strip():
                     blinks.append((float(row[0]), int(float(row[1]))))
@@ -146,6 +155,9 @@ def collect_pairs(roots):
             if "_labels" in root:
                 lab = root
                 root = root.replace("_labels", "_data")
+            if lab == root:
+                print("跳过非 *_data.csv / *_labels.csv 文件：%s" % root)
+                continue
             if os.path.isfile(root) and os.path.isfile(lab):
                 pairs.append((root, lab))
             continue

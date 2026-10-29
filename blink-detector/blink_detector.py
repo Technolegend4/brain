@@ -16,7 +16,9 @@ EEG 眨眼检测程序  blink_detector.py
     或正负极性不一致。因此本程序用"双通道一致性"判据：
 
         z1, z2  = 两个前额通道带通后除以各自的稳健标准差(MAD 估计)
-        score   = min(pol * z1, pol * z2)          # 两个通道都必须达到该幅度
+        score   = _gate_score(pol * z1, pol * z2)
+                  两通道换算到同向后都须超过同向门限 gate，再取较强通道幅度
+                  （否则判为无眨眼），用于与阈值 k 比较（k > gate）
 
     只有当【两个通道同时朝同一方向、且幅度都超过阈值】时才算眨眼，
     从而天然抑制单通道伪迹（例如本数据集 11.5s 处 FP1 单独 +14σ 的伪迹）。
@@ -318,6 +320,12 @@ def load_and_prepare(path, fs_override=None):
     if not ch_cols:
         raise ValueError("未找到可用的 EEG 通道")
 
+    # ---- 时间戳单调性保护：乱序/回退时按时间统一排序，避免 np.interp 出错 ----
+    if np.any(np.diff(t_raw) <= 0):
+        order = np.argsort(t_raw, kind="stable")
+        t_raw = t_raw[order]
+        mat = mat[order, :]
+
     # ---- 重采样到均匀网格（原时间戳可能不均匀）----
     t_start, t_end = float(t_raw[0]), float(t_raw[-1])
     n_uni = max(int(round((t_end - t_start) * fs)) + 1, 2)
@@ -438,11 +446,16 @@ def build_score(z, fs, polarity="auto", consistency=CONSISTENCY, gate=GATE_S):
     zs = [moving_average(v, w) for v in zs]
 
     if len(zs) < 2 or not consistency:
-        if polarity in (-1, 1):
-            score = polarity * zs[0]
+        # 注意：CLI 传入的 polarity 是字符串 "auto"/"neg"/"pos"/"both"，
+        # 不能用 `polarity in (-1, 1)` 判断，否则单通道下指定极性会被静默忽略。
+        if str(polarity) in ("neg", "pos"):
+            pol = -1 if str(polarity) == "neg" else 1
+            score = pol * zs[0]
+            note = "单通道模式(未启用一致性) 极性: %s向(指定)" % ("负" if pol < 0 else "正")
         else:
             score = np.abs(zs[0])
-        return score, polarity, "单通道模式(未启用一致性)"
+            note = "单通道模式(未启用一致性)"
+        return score, polarity, note
 
     if polarity == "auto":
         pol = detect_polarity(zs, fs)
@@ -552,7 +565,7 @@ def try_plot(out_path, t, score, res):
     fig, ax = plt.subplots(figsize=(16, 5))
     for name, zs in res.get("z", {}).items():
         ax.plot(t, zs, lw=0.6, color="0.75", label="%s (z)" % name)
-    ax.plot(t, score, lw=1.0, color="tab:blue", label="score = min(polarity * z_ch)")
+    ax.plot(t, score, lw=1.0, color="tab:blue", label="score = gate & max(polarity * z_ch)")
     ax.axhline(res["threshold"], color="tab:red", ls="--", lw=0.8,
                label="threshold k=%.1f SD" % res["threshold"])
     pk = res["peak_idx"]
