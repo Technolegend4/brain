@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>眨眼小鸟 · Blink Bird</title>
+<meta name="description" content="用眨眼（前额 EEG/EOG 伪迹）驱动的小鸟躲避游戏，含实时检测、延迟补偿与自适应难度。">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='42' fill='%23ffd54a'/><circle cx='62' cy='42' r='13' fill='%23fff'/><circle cx='66' cy='43' r='6' fill='%23222'/><path d='M72 56 l20 7 -20 8z' fill='%23f2721b'/></svg>">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <h1>眨眼<em>小鸟</em> <span class="muted" style="font-size:14px;font-weight:400">Blink Bird</span></h1>
+      <p>前额脑电中的眨眼伪迹 → 实时检测 → 小鸟振翅。全部算法在浏览器本地运行，数据不上传。</p>
+    </div>
+    <div class="badges">
+      <span class="badge">零依赖 · 纯前端</span>
+      <span class="badge">因果滤波 <b>0.5–8 Hz</b></span>
+      <span class="badge">延迟补偿 <b>≤ 450 ms</b></span>
+    </div>
+  </header>
+
+  <div class="layout">
+
+   <div class="stagecol">
+    <!-- ================= 游戏 ================= -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>游戏</h2>
+        <div class="link"><i class="dot" id="dot"></i><span id="linkText">未连接</span></div>
+      </div>
+      <div class="stage">
+        <div class="canvas-shell">
+          <canvas id="game" width="480" height="640"></canvas>
+          <div class="overlay" id="overlay">
+            <h3 id="ovTitle">准备开始</h3>
+            <p id="ovText">选择左侧信号源，点击「连接并开始」。没有设备也可以先用合成 EEG 体验完整闭环。</p>
+            <button class="btn primary" id="ovBtn">开始</button>
+            <p class="hint" id="ovHint">键盘 <span class="kbd">空格</span> 可模拟一次眨眼（调试用）</p>
+          </div>
+        </div>
+
+        <div class="hud">
+          <div class="stat accent"><span>得分</span><strong id="stScore">0</strong></div>
+          <div class="stat"><span>最高</span><strong id="stBest">0</strong></div>
+          <div class="stat"><span>眨眼</span><strong id="stBlinks">0</strong></div>
+          <div class="stat"><span>眨眼率 /分</span><strong id="stRate">0</strong></div>
+          <div class="stat warn"><span>延迟</span><strong id="stLag">—</strong></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 脑电可视化 ================= -->
+    <section class="panel" id="eegPanel">
+      <div class="panel-head">
+        <h2>脑电信号</h2>
+        <span class="badge" id="eegMeta">FP1 · FP2 · 250 Hz</span>
+      </div>
+      <div class="eeg-body">
+        <canvas id="wave"></canvas>
+        <div class="wave-legend">
+          <span><i style="background:#3bb6ff"></i>FP1 (z)</span>
+          <span><i style="background:#ff8fb1"></i>FP2 (z)</span>
+          <span><i style="background:#4ce0b3"></i>检测分数</span>
+          <span><i style="background:#ffb454"></i>触发阈值</span>
+          <span><i style="background:#ffffff"></i>眨眼事件</span>
+        </div>
+      </div>
+    </section>
+   </div>
+
+    <!-- ================= 控制 ================= -->
+    <aside>
+
+      <section class="panel" style="margin-bottom:16px">
+        <div class="panel-head">
+          <h2>信号源</h2>
+          <span class="badge" id="srcBadge">合成</span>
+        </div>
+        <div class="panel-body">
+
+          <div class="field">
+            <label class="lbl" for="sourceSel">数据来源</label>
+            <select id="sourceSel">
+              <option value="sim" selected>合成 EEG（无需硬件）</option>
+              <option value="csv">回放本地 EEG CSV</option>
+              <option value="serial">OpenBCI 串口（Web Serial）</option>
+              <option value="ws">Python 桥接器（WebSocket）</option>
+            </select>
+          </div>
+
+          <!-- 合成 -->
+          <div class="field" id="boxSim">
+            <label class="lbl" for="simInterval">自然眨眼间隔 <b id="vSimInterval">3.2 s</b></label>
+            <input type="range" id="simInterval" min="1.2" max="8" step="0.1" value="3.2">
+            <div class="btn-row" style="margin-top:8px">
+              <button class="btn" id="btnSimBlink">模拟一次眨眼</button>
+              <button class="btn" id="btnSimDouble">连续两次</button>
+            </div>
+            <p class="hint">合成信号包含 1/f 背景、基线漂移、50 Hz 工频、随机肌电突发和双指数眨眼模板，用来验证检测链路。</p>
+          </div>
+
+          <!-- CSV -->
+          <div class="field" id="boxCsv" hidden>
+            <label class="lbl" for="csvFile">选择 CSV 文件 <b id="vCsvInfo"></b></label>
+            <input type="file" id="csvFile" accept=".csv,.txt" style="padding:6px">
+            <div class="btn-row" style="margin-top:8px">
+              <button class="btn" id="btnDemoCsv">用数据集示例</button>
+            </div>
+
+            <div class="field" style="margin-top:12px">
+              <label class="lbl" for="playSpeed">回放速度 <b id="vSpeed">1×</b></label>
+              <input type="range" id="playSpeed" min="1" max="8" step="1" value="1">
+            </div>
+
+            <div class="progress-wrap">
+              <div class="progress" id="playBar"></div>
+            </div>
+            <div class="play-meta">
+              <span>回放 <b id="vPlayPos">0.0 / 0.0 s</b></span>
+              <span>检出眨眼 <b id="vBlinkCount">0</b> 次</span>
+            </div>
+
+            <p class="hint">支持 EEG-EyeBlinks 的两种格式：<code>分号表头</code>（EEG-IO）与 <code>OpenBCI 原始</code>（EEG-VR/VV），也可直接拖到页面上。<b>载入后会自动开始回放。</b></p>
+          </div>
+
+          <!-- 串口 -->
+          <div class="field" id="boxSerial" hidden>
+            <label class="lbl" for="serialFs">采样率 <b id="vSerialFs">250 Hz</b></label>
+            <input type="range" id="serialFs" min="125" max="500" step="5" value="250">
+            <p class="hint">Chrome / Edge 下可用。支持 OpenBCI Cyton 二进制包（33 字节，0xA0…0xC0）。连接后在串口对话框中选中设备。</p>
+          </div>
+
+          <!-- WebSocket -->
+          <div class="field" id="boxWs" hidden>
+            <label class="lbl" for="wsUrl">桥接器地址</label>
+            <input type="text" id="wsUrl" value="ws://127.0.0.1:8765" spellcheck="false">
+            <p class="hint">配合 <code>python tools/bridge.py</code> 使用：先在服务端做离线检测，再把事件按时间轴推过来。</p>
+          </div>
+
+          <div class="sep"></div>
+
+          <div class="btn-row">
+            <button class="btn primary" id="btnConnect">连接并开始</button>
+            <button class="btn" id="btnStop" disabled>停止</button>
+          </div>
+
+          <div class="btn-row" style="margin-top:8px">
+            <button class="btn" id="btnPause" disabled>暂停</button>
+            <button class="btn ghost" id="btnRestart">重开一局</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-bottom:16px">
+        <div class="panel-head">
+          <h2>映射与检测</h2>
+          <span class="badge" id="detBadge">就绪</span>
+        </div>
+        <div class="panel-body">
+
+          <div class="field">
+            <label class="lbl" for="modeSel">眨眼 → 动作</label>
+            <select id="modeSel">
+              <option value="assist" selected>辅助振翅 + 眨眼加成（推荐）</option>
+              <option value="direct">一次眨眼 = 一次跳</option>
+              <option value="hold">闭眼上升 / 睁眼下落</option>
+              <option value="gate">眨眼开关节拍</option>
+            </select>
+            <p class="hint" id="modeHint">基础节拍保证可玩性，眨眼会额外振翅并短暂加快节拍。</p>
+          </div>
+
+          <div class="field">
+            <label class="lbl" for="thr">触发阈值 k <b id="vThr">3.4 σ</b></label>
+            <input type="range" id="thr" min="1.2" max="8" step="0.1" value="3.4">
+          </div>
+
+          <div class="field">
+            <label class="lbl" for="boost">游戏灵敏度 <b id="vBoost">1.10</b></label>
+            <input type="range" id="boost" min="0.9" max="1.8" step="0.05" value="1.10">
+            <p class="hint">调高 → 更少误跳、更多漏跳；调低 → 更灵敏、更容易乱跳</p>
+          </div>
+
+          <div class="field">
+            <label class="lbl" for="refr">不应期 <b id="vRefr">300 ms</b></label>
+            <input type="range" id="refr" min="180" max="900" step="10" value="300">
+          </div>
+
+          <div class="field">
+            <label class="lbl" for="autoThr">自适应难度 <b id="vAuto">开</b></label>
+            <input type="range" id="autoThr" min="0" max="1" step="1" value="1">
+            <p class="hint">根据最近 30 秒的实测眨眼率调整管道间隙与速度，让不同眨眼频率的人都能进入心流。</p>
+          </div>
+
+          <div class="sep"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>日志</h2>
+          <button class="btn ghost" id="btnClearLog" style="padding:2px 8px;font-size:11px">清空</button>
+        </div>
+        <div class="panel-body" style="padding-top:10px">
+          <div class="log" id="log"></div>
+          <div class="sep"></div>
+          <ol class="steps" id="steps">
+            <li id="s1">选择信号源</li>
+            <li id="s2">连接并开始</li>
+            <li id="s3">校准阈值（可选）</li>
+            <li id="s4">保持放松，正常眨眼</li>
+          </ol>
+        </div>
+      </section>
+
+    </aside>
+  </div>
+
+  <footer class="foot">
+    <b>产权说明：</b>本项目的游戏代码、界面、角色与音效均为原创实现，未复制任何第三方仓库的代码或素材。
+    玩法机制（重力、振翅、管道躲避）属于通用游戏设计，不受版权保护；「Flappy Bird」相关名称与角色形象归其权利人所有，
+    本项目使用原创角色「眨眼小鸟 / Blink Bird」，仅作玩法致敬，与官方无关联。
+    实时滤波与检测算法参考了公开的 EEG 眨眼检测文献与 RBJ 滤波器设计公式，均为独立实现。
+    详见 <a href="NOTICE.md">NOTICE.md</a>。
+  </footer>
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/filter.js"></script>
+<script src="js/detector.js"></script>
+<script src="js/synth.js"></script>
+<script src="js/sources.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

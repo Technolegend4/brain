@@ -1,0 +1,6 @@
+# Muse 实时眨眼桥接器依赖
+# 建议用 Python 3.9~3.12（brainflow 对新版本 Python 的 wheel 可能滞后）
+brainflow>=5.15.0
+numpy>=1.24
+scipy>=1.10
+websockets>=12.0

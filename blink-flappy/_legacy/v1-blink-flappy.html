@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>眨眼驱动 Flappy Bird</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b1220; --panel:#121d30; --line:#2a3a53;
+          --text:#edf4ff; --muted:#a8b7ce; --accent:#73e0c1; --warn:#ffb86b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:radial-gradient(ellipse at top,#172946 0,#0b1220 60%);
+         color:var(--text); font:15px/1.55 system-ui,-apple-system,sans-serif; }
+  main { max-width:1080px; margin:0 auto; padding:22px 16px 34px; }
+  h1 { margin:0 0 4px; font-size:clamp(22px,3.6vw,32px); }
+  .intro { margin:0 0 18px; color:var(--muted); font-size:14px; }
+  .layout { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(270px,1fr);
+            gap:16px; align-items:start; }
+  .panel { background:rgba(18,29,48,.94); border:1px solid var(--line);
+           border-radius:16px; padding:16px; box-shadow:0 12px 30px #0002; }
+  canvas { display:block; width:100%; height:auto; border-radius:12px;
+           background:#a8ddf5; border:1px solid #3c5975; }
+  .statusbar { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .stat { background:#0b1424; border:1px solid var(--line); padding:7px 11px;
+          border-radius:10px; min-width:92px; }
+  .stat span { display:block; color:var(--muted); font-size:11px; }
+  .stat strong { font-size:19px; font-variant-numeric:tabular-nums; }
+  label { display:block; margin:12px 0 5px; font-size:13px; color:var(--muted); }
+  input, textarea, select, button { font:inherit; color:var(--text);
+          background:#0b1424; border:1px solid var(--line); border-radius:9px; padding:8px 10px; }
+  input, textarea, select { width:100%; }
+  textarea { resize:vertical; min-height:66px; font-family:ui-monospace,Menlo,monospace;
+             font-size:13px; }
+  .row { display:flex; gap:8px; }
+  .row > * { flex:1; }
+  button { cursor:pointer; background:#17324a; transition:.15s; }
+  button:hover { background:#1d3f5e; }
+  button.primary { background:#1f6f5c; border-color:#2c8f77; }
+  button.primary:hover { background:#26856f; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .hint { color:var(--muted); font-size:12px; margin:8px 0 0; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+         background:#5a6b82; margin-right:6px; vertical-align:middle; }
+  .dot.on { background:var(--accent); box-shadow:0 0 8px var(--accent); }
+  .dot.err { background:#ff6b6b; }
+  .log { margin-top:10px; max-height:120px; overflow:auto; font-family:ui-monospace,Menlo,monospace;
+         font-size:12px; color:var(--muted); background:#0b1424; border:1px solid var(--line);
+         border-radius:9px; padding:8px; }
+  .log div { white-space:nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>眨眼驱动 Flappy Bird</h1>
+  <p class="intro">
+    两种驱动方式：<b>离线回放</b>（粘贴检测出的时间点）或 <b>实时信号</b>
+    （连接 Python 桥接器的 WebSocket）。三种接入模式解决「眨眼太慢、管道太快」的问题。
+  </p>
+
+  <div class="layout">
+    <section class="panel">
+      <canvas id="game" width="480" height="640"></canvas>
+      <div class="statusbar">
+        <div class="stat"><span>时间</span><strong id="stTime">0.0</strong></div>
+        <div class="stat"><span>得分</span><strong id="stScore">0</strong></div>
+        <div class="stat"><span>碰撞</span><strong id="stHit">0</strong></div>
+        <div class="stat"><span>眨眼事件</span><strong id="stBlink">0</strong></div>
+      </div>
+      <div class="statusbar">
+        <div class="stat" style="flex:1"><span>信号</span>
+          <strong id="stLink" style="font-size:14px">
+            <i class="dot" id="dot"></i><span id="linkText">未连接</span>
+          </strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <label>接入模式</label>
+      <select id="mode">
+        <option value="direct">direct — 一次眨眼 = 一次跳</option>
+        <option value="gate" selected>gate — 眨眼开启/暂停自动节拍</option>
+        <option value="boost">boost — 自动节拍 + 眨眼额外升力</option>
+      </select>
+
+      <label>离线回放：起跳时间点（秒）</label>
+      <textarea id="times" spellcheck="false">1.5, 3.0, 4.5</textarea>
+
+      <div class="row" style="margin-top:10px">
+        <button id="btnStart" class="primary">开始</button>
+        <button id="btnReset">重置</button>
+      </div>
+
+      <label>实时信号（WebSocket）</label>
+      <div class="row">
+        <input id="wsUrl" value="ws://127.0.0.1:8765">
+        <button id="btnConn" style="flex:0 0 84px">连接</button>
+      </div>
+      <p class="hint" id="hint">
+        先用 <code>py bridge.py detect 数据.csv -o jumps.json</code> 生成事件，
+        再 <code>py bridge.py serve jumps.json</code> 起服务，然后点「连接」。
+      </p>
+      <div class="log" id="log"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  const W = 480, H = 640;
+  const cv = document.getElementById("game");
+  const ctx = cv.getContext("2d");
+
+  // ---------- 物理参数（与原版一致）----------
+  const GRAVITY = 900, JUMP_V = -345, PIPE_W = 76, GAP = 166;
+  const PIPE_SPEED = 205, PIPE_INTERVAL = 1.65, BIRD_X = 110;
+  const FLOOR_Y = H - 56, CEIL_Y = 0;
+
+  // ---------- 状态 ----------
+  let bird = { y: H * 0.46, vy: 0, rot: 0 };
+  let pipes = [], tSec = 0, nextPipeAt = 0.8;
+  let score = 0, hits = 0, blinkCount = 0, running = false;
+  let lastJumpAt = -9;                 // 防抖：两次起跳最小间隔
+  const MIN_JUMP_GAP = 0.10;           // 100 ms 内不重复起跳
+
+  // 接入模式
+  let mode = "gate";
+  // 离线时间表
+  let schedule = [], fired = new Set();
+  // 自动节拍（gate / boost）
+  let autopilot = false, nextAutoAt = 0;
+  const AUTO_PERIOD = 0.42;            // 自动节拍周期
+  // 实时信号
+  let ws = null, wsEvents = [];
+
+  // ---------- DOM ----------
+  const $ = (id) => document.getElementById(id);
+  const stTime = $("stTime"), stScore = $("stScore"), stHit = $("stHit");
+  const stBlink = $("stBlink"), dot = $("dot"), linkText = $("linkText");
+  const logEl = $("log");
+
+  function log(msg) {
+    const d = document.createElement("div");
+    const ts = tSec.toFixed(2);
+    d.textContent = "[" + ts + "s] " + msg;
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // ---------- 起跳 ----------
+  function jump(source) {
+    if (!running) return;
+    if (tSec - lastJumpAt < MIN_JUMP_GAP) return;
+    lastJumpAt = tSec;
+    bird.vy = JUMP_V;
+    if (source === "blink") log("眨眼触发起跳");
+  }
+
+  // ---------- 眨眼事件入口 ----------
+  function onBlinkEvent(t, scoreSd) {
+    blinkCount++;
+    stBlink.textContent = blinkCount;
+    log("收到眨眼事件 t=" + Number(t).toFixed(2) + " 强度 " + Number(scoreSd || 0).toFixed(1) + "σ");
+
+    if (mode === "direct") {
+      jump("blink");
+    } else if (mode === "gate") {
+      autopilot = !autopilot;
+      nextAutoAt = tSec;
+      log(autopilot ? "自动节拍：开" : "自动节拍：关");
+    } else if (mode === "boost") {
+      if (!autopilot) { autopilot = true; log("自动节拍：开"); }
+      jump("blink");                    // 额外一次升力
+    }
+  }
+
+  // ---------- 离线时间表 ----------
+  function parseTimes(str) {
+    return String(str)
+      .split(/[,;\s\n]+/)
+      .map((s) => parseFloat(s))
+      .filter((v) => Number.isFinite(v) && v >= 0)
+      .sort((a, b) => a - b);
+  }
+
+  // ---------- 主循环 ----------
+  let last = 0;
+  function loop(ts) {
+    if (!last) last = ts;
+    let dt = (ts - last) / 1000;
+    last = ts;
+    if (dt > 0.035) dt = 0.035;        // 防切后台瞬移
+    if (running) update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function update(dt) {
+    tSec += dt;
+    stTime.textContent = tSec.toFixed(1);
+
+    // 离线时间表
+    for (let i = 0; i < schedule.length; i++) {
+      if (tSec >= schedule[i] && !fired.has(i)) {
+        fired.add(i);
+        // 离线回放也走同一个入口，保证三种模式行为一致
+        onBlinkEvent(schedule[i], 0);
+      }
+    }
+
+    // 自动节拍
+    if (autopilot && tSec >= nextAutoAt) {
+      nextAutoAt = tSec + AUTO_PERIOD;
+      jump("auto");
+    }
+
+    // 小鸟物理
+    bird.vy += GRAVITY * dt;
+    bird.y += bird.vy * dt;
+    if (bird.y < CEIL_Y + 18) { bird.y = CEIL_Y + 18; bird.vy = 0; }
+    if (bird.y > FLOOR_Y - 16) { bird.y = FLOOR_Y - 16; bird.vy = 0; }
+    bird.rot = Math.max(-0.5, Math.min(1.1, bird.vy / 700));
+
+    // 管道
+    if (tSec >= nextPipeAt) {
+      nextPipeAt = tSec + PIPE_INTERVAL;
+      const top = 118 + Math.random() * (H - 236);
+      pipes.push({ x: W + PIPE_W, gapY: top, scored: false, hit: false });
+    }
+    for (const p of pipes) p.x -= PIPE_SPEED * dt;
+
+    // 碰撞 / 计分
+    for (const p of pipes) {
+      const inX = BIRD_X + 17 > p.x && BIRD_X - 17 < p.x + PIPE_W;
+      if (inX) {
+        const topEdge = p.gapY - GAP / 2, botEdge = p.gapY + GAP / 2;
+        if (bird.y - 14 < topEdge || bird.y + 14 > botEdge) {
+          if (!p.hit) { p.hit = true; hits++; stHit.textContent = hits; }
+        }
+      }
+      if (!p.scored && p.x + PIPE_W < BIRD_X - 17) {
+        p.scored = true;
+        if (!p.hit) { score++; stScore.textContent = score; }
+      }
+    }
+    pipes = pipes.filter((p) => p.x > -PIPE_W - 10);
+  }
+
+  // ---------- 绘制 ----------
+  function draw() {
+    // 天空
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#9ed7f2");
+    g.addColorStop(1, "#d6eefb");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // 云
+    ctx.fillStyle = "rgba(255,255,255,.65)";
+    for (let i = 0; i < 3; i++) {
+      const cx = ((tSec * 18 + i * 190) % (W + 160)) - 80;
+      const cy = 90 + i * 70;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 46, 20, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + 34, cy + 6, 32, 15, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 管道
+    for (const p of pipes) {
+      const topEdge = p.gapY - GAP / 2, botEdge = p.gapY + GAP / 2;
+      ctx.fillStyle = p.hit ? "#d9534f" : "#5aa83c";
+      ctx.fillRect(p.x, 0, PIPE_W, Math.max(0, topEdge));
+      ctx.fillRect(p.x, botEdge, PIPE_W, Math.max(0, FLOOR_Y - botEdge));
+      ctx.fillStyle = p.hit ? "#b84340" : "#47882f";
+      ctx.fillRect(p.x - 5, topEdge - 22, PIPE_W + 10, 22);
+      ctx.fillRect(p.x - 5, botEdge, PIPE_W + 10, 22);
+    }
+
+    // 地面
+    ctx.fillStyle = "#c9b17a";
+    ctx.fillRect(0, FLOOR_Y, W, H - FLOOR_Y);
+
+    // 小鸟
+    ctx.save();
+    ctx.translate(BIRD_X, bird.y);
+    ctx.rotate(bird.rot);
+    ctx.fillStyle = "#ffd54a";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 18, 15, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(6, -5, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#222";
+    ctx.beginPath();
+    ctx.arc(8, -5, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#f2833a";
+    ctx.beginPath();
+    ctx.moveTo(15, 1); ctx.lineTo(26, 5); ctx.lineTo(15, 9);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    // 叠加信息
+    ctx.fillStyle = "rgba(11,18,32,.72)";
+    ctx.fillRect(12, 12, 154, 58);
+    ctx.fillStyle = "#73e0c1";
+    ctx.font = "600 15px system-ui";
+    ctx.fillText("mode: " + mode, 24, 34);
+    ctx.fillStyle = "#edf4ff";
+    ctx.font = "13px system-ui";
+    ctx.fillText("autopilot: " + (autopilot ? "ON" : "OFF"), 24, 56);
+
+    if (!running) {
+      ctx.fillStyle = "rgba(11,18,32,.62)";
+      ctx.fillRect(0, H / 2 - 46, W, 92);
+      ctx.fillStyle = "#edf4ff";
+      ctx.font = "600 19px system-ui";
+      ctx.textAlign = "center";
+      ctx.fillText("点击「开始」", W / 2, H / 2 - 6);
+      ctx.font = "14px system-ui";
+      ctx.fillStyle = "#a8b7ce";
+      ctx.fillText("得分 " + score + "   碰撞 " + hits, W / 2, H / 2 + 24);
+      ctx.textAlign = "left";
+    }
+  }
+
+  // ---------- 控制 ----------
+  function resetState() {
+    bird = { y: H * 0.46, vy: 0, rot: 0 };
+    pipes = []; tSec = 0; nextPipeAt = 0.8;
+    score = 0; hits = 0; blinkCount = 0; lastJumpAt = -9;
+    autopilot = false; nextAutoAt = 0; fired = new Set();
+    stTime.textContent = "0.0"; stScore.textContent = "0";
+    stHit.textContent = "0"; stBlink.textContent = "0";
+    // 清空事件缓存（保留连接）
+    wsEvents = [];
+  }
+
+  function start() {
+    resetState();
+    schedule = parseTimes($("times").value);
+    running = true;
+    log("开始：离线时间点 " + schedule.length + " 个，模式 " + mode);
+  }
+
+  // ---------- WebSocket ----------
+  function setLink(state, text) {
+    dot.className = "dot" + (state === "on" ? " on" : state === "err" ? " err" : "");
+    linkText.textContent = text;
+  }
+
+  function connect() {
+    if (ws) { try { ws.close(); } catch (e) {} ws = null; }
+    const url = $("wsUrl").value.trim();
+    setLink("", "连接中…");
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      setLink("err", "地址无效");
+      return;
+    }
+    ws.onopen = () => { setLink("on", "已连接"); log("WebSocket 已连接 " + url); };
+    ws.onclose = () => { setLink("", "已断开"); log("WebSocket 断开"); };
+    ws.onerror = () => { setLink("err", "连接失败"); };
+    ws.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (msg.type === "ready") {
+        log("服务端就绪，共 " + msg.count + " 个事件");
+      } else if (msg.type === "blink") {
+        wsEvents.push(msg.t);
+        onBlinkEvent(msg.t, msg.score);
+      } else if (msg.type === "done") {
+        log("事件流结束");
+      }
+    };
+  }
+
+  // ---------- 事件绑定 ----------
+  $("btnStart").addEventListener("click", start);
+  $("btnReset").addEventListener("click", () => {
+    running = false;
+    resetState();
+    log("已重置");
+  });
+  $("btnConn").addEventListener("click", connect);
+  $("mode").addEventListener("change", (e) => {
+    mode = e.target.value;
+    autopilot = false;
+    log("模式切换为 " + mode);
+  });
+
+  // 键盘仅在本地调试时可用；真实实验请注释掉这一段
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Space") { e.preventDefault(); jump("manual"); }
+  });
+
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
