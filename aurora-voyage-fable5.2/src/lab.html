@@ -1,0 +1,1406 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#03050c">
+  <title>Blink Flight · 眨眼脑电 Flappy Bird</title>
+  <style>
+    :root{
+      --text:#eef4ff; --muted:rgba(190,205,230,.62);
+      --mono:"DM Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+      --gold:#ffe9c2; --gold-dim:rgba(255,233,194,.55);
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;overflow:hidden}
+    body{
+      background:linear-gradient(158deg,#070c18 0%,#08101f 42%,#03050c 100%);
+      color:var(--text);
+      font-family:Manrope,"Noto Sans SC",sans-serif;
+    }
+
+    /* ---------- 全屏星海背景（与首页 aurora-home 同一套渲染） ---------- */
+    #bgStars{position:fixed;inset:0;z-index:0;display:block}
+    /* 极淡的左侧压暗，只为让文字在星光上更清楚（不是框） */
+    .scrim{
+      position:fixed;inset:0;z-index:0;pointer-events:none;
+      background:
+        linear-gradient(90deg,rgba(3,6,14,.52) 0%,rgba(3,6,14,.26) 24%,rgba(3,6,14,.05) 40%,rgba(3,6,14,0) 48%),
+        radial-gradient(ellipse at 18% 100%,rgba(2,5,12,.45),transparent 62%);
+    }
+
+    /* ---------- 全屏布局：左列 1/3 可滚动（波形 / 参数 / 皮肤），右列 2/3 游戏 ---------- */
+    .stage{
+      position:fixed;inset:0;z-index:1;
+      display:grid;
+      grid-template-columns:minmax(300px,1fr) 2.02fr;
+      grid-template-rows:1fr;
+    }
+    .pane{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column}
+    /* 左列整列竖向滚动：内容多时出现极细的香槟金滚动条 */
+    .left-rail{
+      grid-column:1;grid-row:1;min-height:0;
+      overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;
+      -webkit-overflow-scrolling:touch;
+      scrollbar-width:thin;scrollbar-color:rgba(255,236,200,.20) transparent;
+    }
+    .left-rail::-webkit-scrollbar{width:6px}
+    .left-rail::-webkit-scrollbar-track{background:transparent}
+    .left-rail::-webkit-scrollbar-thumb{
+      background:rgba(255,236,200,.16);border-radius:99px;
+    }
+    .left-rail::-webkit-scrollbar-thumb:hover{background:rgba(255,236,200,.34)}
+    .pane-eeg{padding:22px 22px 18px 28px;height:44vh;min-height:286px;flex:0 0 auto}
+    .pane-ctl{padding:24px 22px 16px 28px;flex:0 0 auto}
+    .pane-skin{padding:6px 22px 30px 28px;flex:0 0 auto}
+    .pane-game{grid-column:2;grid-row:1;padding:0}
+
+    /* 无框分隔：两条会自己淡出的细线 */
+    .pane-game::before{
+      content:"";position:absolute;left:0;top:5%;bottom:5%;width:1px;z-index:5;
+      background:linear-gradient(180deg,transparent,rgba(196,214,255,.20) 22%,rgba(196,214,255,.20) 78%,transparent);
+      pointer-events:none;
+    }
+    .pane-ctl::before{
+      content:"";position:absolute;left:26px;right:26px;top:0;height:1px;
+      background:linear-gradient(90deg,transparent,rgba(196,214,255,.18) 18%,rgba(196,214,255,.18) 82%,transparent);
+    }
+
+    .pane-label{
+      display:flex;align-items:center;gap:10px;
+      font:9.5px var(--mono);letter-spacing:2.4px;color:var(--muted);
+      text-shadow:0 1px 8px rgba(2,5,12,.9);
+    }
+    .pane-label::after{content:"";flex:1;height:1px;
+      background:linear-gradient(90deg,rgba(196,214,255,.20),transparent)}
+    .home-link{
+      margin-left:auto;font:10px var(--mono);letter-spacing:1.4px;
+      color:rgba(235,225,200,.72);text-decoration:none;transition:.25s;white-space:nowrap;
+    }
+    .home-link:hover{color:#fff;text-shadow:0 0 12px rgba(255,230,180,.6)}
+
+    /* ---------- 左上：实时脑电波形 ---------- */
+    .eeg-readout{display:flex;align-items:baseline;gap:14px;margin:14px 0 10px}
+    .eeg-readout b{
+      font-size:34px;font-weight:700;letter-spacing:-1px;line-height:1;
+      color:#fff;text-shadow:0 0 18px rgba(120,220,255,.35);
+      font-variant-numeric:tabular-nums;
+    }
+    .eeg-readout small{font:10px var(--mono);letter-spacing:1.6px;color:var(--muted)}
+    .eeg-readout .thr{
+      margin-left:auto;text-align:right;
+      font:10px var(--mono);letter-spacing:1.4px;color:var(--gold-dim);
+    }
+    .eeg-readout .thr b{font-size:15px;color:var(--gold);text-shadow:0 0 12px rgba(255,220,150,.4)}
+    #waveCanvas{flex:1;width:100%;min-height:0;display:block}
+
+    /* ---------- 极简滑杆（无框风格） ---------- */
+    .ctl-list{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;min-height:0}
+    .ctl-row{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:baseline}
+    .ctl-row label{font-size:12.5px;letter-spacing:.6px;color:rgba(226,236,252,.86)}
+    .ctl-row label i{font:9px var(--mono);font-style:normal;letter-spacing:1.8px;color:rgba(190,205,230,.45);margin-left:8px}
+    .ctl-row output{
+      font:12px var(--mono);color:var(--gold);
+      font-variant-numeric:tabular-nums;
+      text-shadow:0 0 10px rgba(255,220,150,.35);
+    }
+    .ctl-row input{grid-column:1/3;width:100%}
+    input[type=range]{
+      -webkit-appearance:none;appearance:none;height:22px;background:transparent;cursor:pointer;
+    }
+    input[type=range]::-webkit-slider-runnable-track{
+      height:2px;border-radius:2px;
+      background:linear-gradient(90deg,rgba(120,220,255,.5),rgba(255,225,170,.55));
+    }
+    input[type=range]::-webkit-slider-thumb{
+      -webkit-appearance:none;width:11px;height:11px;border-radius:50%;margin-top:-4.5px;
+      background:#fff;box-shadow:0 0 10px rgba(255,240,200,.85),0 0 3px rgba(120,220,255,.9);
+      transition:transform .15s;
+    }
+    input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.35)}
+    input[type=range]::-moz-range-track{height:2px;border-radius:2px;background:rgba(190,215,255,.35)}
+    input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:#fff;box-shadow:0 0 10px rgba(255,240,200,.85)}
+    .ctl-actions{display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap}
+    .chip{
+      border:0;border-radius:999px;padding:7px 14px;cursor:pointer;transition:.22s;
+      font:600 10.5px Manrope,"Noto Sans SC",sans-serif;letter-spacing:.8px;
+      background:rgba(255,244,220,.07);color:rgba(255,240,214,.85);
+      border:1px solid rgba(255,236,200,.16);
+    }
+    .chip:hover{background:rgba(255,240,210,.14);color:#fff;border-color:rgba(255,236,200,.4);box-shadow:0 0 16px rgba(255,225,170,.18)}
+    .chip.accent{background:rgba(120,210,255,.10);color:#bfeaff;border-color:rgba(130,215,255,.25)}
+    .chip.accent:hover{background:rgba(120,210,255,.2);color:#fff;box-shadow:0 0 16px rgba(120,210,255,.25)}
+    .ctl-status{
+      margin-top:10px;font:9.5px var(--mono);letter-spacing:1px;line-height:1.6;
+      color:rgba(180,198,226,.5);min-height:14px;
+      text-shadow:0 1px 6px rgba(2,5,12,.9);
+    }
+
+    /* ---------- 皮肤选择：无框圆点色板 ---------- */
+    .skin-group{margin-top:16px}
+    .skin-group h4{
+      font:9px var(--mono);font-weight:400;letter-spacing:2px;
+      color:rgba(190,205,230,.44);margin-bottom:10px;
+    }
+    .swatches{display:flex;gap:16px}
+    .sw{
+      background:none;border:0;padding:0;cursor:pointer;
+      display:flex;flex-direction:column;align-items:center;gap:7px;
+    }
+    .sw .dot{
+      width:34px;height:34px;border-radius:50%;position:relative;
+      border:1px solid rgba(255,255,255,.13);
+      transition:transform .26s cubic-bezier(.2,.7,.3,1),box-shadow .26s,border-color .26s;
+    }
+    .sw .dot::after{
+      content:"";position:absolute;inset:-5px;border-radius:50%;pointer-events:none;
+      border:1px solid rgba(255,244,214,0);transition:.26s;
+    }
+    .sw:hover .dot{transform:translateY(-2px) scale(1.06)}
+    .sw.on .dot{
+      border-color:rgba(255,244,214,.8);
+      box-shadow:0 0 18px rgba(255,226,170,.32);
+    }
+    .sw.on .dot::after{border-color:rgba(255,244,214,.20)}
+    .sw .lb{
+      font:9px var(--mono);letter-spacing:1.1px;white-space:nowrap;
+      color:rgba(190,205,230,.5);transition:.2s;
+    }
+    .sw.on .lb{color:#ffeecd;text-shadow:0 0 10px rgba(255,222,160,.35)}
+    /* 飞船皮肤：身体渐变预览 */
+    .sw-bird[data-key="galaxy"] .dot{background:radial-gradient(circle at 32% 26%,#eafffb,#5fe0dc 46%,#7d78ff 100%)}
+    .sw-bird[data-key="aurora"] .dot{background:radial-gradient(circle at 32% 26%,#eafff4,#4fe0a4 46%,#2f9d8a 100%)}
+    .sw-bird[data-key="amber"]  .dot{background:radial-gradient(circle at 32% 26%,#fff7e6,#ffc86b 46%,#e8894a 100%)}
+    /* 背景皮肤：夜空渐变预览 + 一点星点 */
+    .sw-sky .dot::before{
+      content:"";position:absolute;left:26%;top:30%;width:2px;height:2px;border-radius:50%;
+      background:rgba(255,255,255,.85);box-shadow:6px 4px 0 -0.4px rgba(255,255,255,.5),-3px 7px 0 -0.4px rgba(255,255,255,.4);
+    }
+    .sw-sky[data-key="galaxy"] .dot{background:linear-gradient(135deg,#070c18,#12203a 60%,#1a2c50)}
+    .sw-sky[data-key="aurora"] .dot{background:linear-gradient(135deg,#04121a,#0a3a3a 55%,#0e5548)}
+    .sw-sky[data-key="amber"]  .dot{background:linear-gradient(135deg,#140b04,#3a2410 55%,#57391a)}
+
+    /* ---------- 右侧：游戏区 ---------- */
+    #gameCanvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+    .score-hud{
+      position:absolute;top:22px;right:34px;z-index:4;text-align:right;white-space:nowrap;
+      font-family:var(--mono);pointer-events:none;
+      text-shadow:0 2px 14px rgba(2,5,12,.95);
+    }
+    .score-hud b{
+      display:block;font-size:42px;font-weight:400;line-height:1;color:#fff;
+      font-variant-numeric:tabular-nums;
+      text-shadow:0 0 22px rgba(150,220,255,.4),0 2px 14px rgba(2,5,12,.95);
+    }
+    .score-hud span{display:block;margin-top:6px;font-size:9.5px;letter-spacing:2.4px;color:var(--muted)}
+    .score-hud span em{font-style:normal;color:var(--gold-dim)}
+    .game-corner{
+      position:absolute;bottom:16px;right:24px;z-index:4;display:flex;gap:14px;align-items:center;
+      font:9.5px var(--mono);letter-spacing:1.6px;color:rgba(190,205,230,.55);
+      text-shadow:0 1px 8px rgba(2,5,12,.9);
+    }
+    .game-corner button{
+      background:none;border:0;cursor:pointer;color:rgba(235,225,200,.75);
+      font:10px var(--mono);letter-spacing:1.6px;transition:.2s;
+    }
+    .game-corner button:hover{color:#fff;text-shadow:0 0 10px rgba(255,230,180,.6)}
+    .brand-tag{
+      position:absolute;top:20px;left:28px;z-index:4;display:flex;align-items:center;gap:9px;
+      font:10px var(--mono);letter-spacing:2.2px;color:rgba(255,244,226,.9);
+      text-decoration:none;text-shadow:0 1px 10px rgba(2,5,12,.95),0 0 18px rgba(255,225,175,.22);transition:.25s;
+    }
+    .brand-tag:hover{color:#fff;text-shadow:0 0 16px rgba(255,230,180,.6)}
+    .brand-tag .dot{
+      width:7px;height:7px;border-radius:50%;background:var(--gold);
+      box-shadow:0 0 10px var(--gold);
+    }
+
+    /* ---------- 开始 / 结束浮层 ---------- */
+    .overlay{
+      position:absolute;inset:0;z-index:6;display:grid;place-items:center;text-align:center;
+      background:radial-gradient(ellipse at 50% 52%,rgba(4,10,22,.42) 0%,rgba(3,7,16,.58) 62%,rgba(2,5,12,.66) 100%);
+      backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);
+      transition:opacity .5s ease,visibility .5s ease;
+    }
+    .overlay.hidden{opacity:0;visibility:hidden}
+    .overlay .kicker{font:10px var(--mono);letter-spacing:3px;color:var(--gold-dim);margin-bottom:12px}
+    .overlay h2{font-size:30px;font-weight:700;letter-spacing:.5px;margin-bottom:10px;text-shadow:0 2px 24px rgba(2,5,12,.9)}
+    .overlay p{font-size:12.5px;color:rgba(205,220,240,.75);margin-bottom:24px;line-height:1.8}
+    .primary-btn{
+      border:0;border-radius:999px;padding:13px 30px;cursor:pointer;transition:.25s;
+      font:600 12.5px Manrope,"Noto Sans SC",sans-serif;letter-spacing:2px;
+      background:rgba(255,244,220,.10);color:#fff;
+      border:1px solid rgba(255,236,200,.35);
+      box-shadow:0 0 24px rgba(255,225,170,.12);
+    }
+    .primary-btn:hover{
+      background:rgba(255,240,210,.2);transform:translateY(-2px);
+      box-shadow:0 0 34px rgba(255,225,170,.3);
+    }
+
+    /* ---------- 窄屏：纵向堆叠 ---------- */
+    @media(max-width:860px){
+      html,body{overflow:auto}
+      .stage{position:relative;inset:auto;grid-template-columns:1fr;grid-template-rows:auto;min-height:100%}
+      .left-rail{grid-column:1;grid-row:2;overflow:visible;height:auto}
+      .pane-game{grid-column:1;grid-row:1;height:56vh;min-height:320px}
+      .pane-eeg{grid-column:1;grid-row:auto;height:276px;padding:14px 18px 18px}
+      .pane-ctl{grid-column:1;grid-row:auto;height:auto;padding:24px 18px 26px}
+      .pane-skin{grid-column:1;grid-row:auto;padding:0 18px 30px}
+      .pane-ctl::before{left:18px;right:18px}
+      .pane-game::before{display:none}
+      .eeg-readout b{font-size:28px}
+      .score-hud b{font-size:30px}
+    }
+  </style>
+</head>
+<body>
+  <canvas id="bgStars" aria-hidden="true"></canvas>
+  <div class="scrim" aria-hidden="true"></div>
+
+  <div class="stage">
+    <!-- 左列 1/3：整列可滚动 -->
+    <div class="left-rail">
+    <!-- 左上：实时脑电波形 -->
+    <section class="pane pane-eeg" aria-label="实时脑电波形">
+      <div class="pane-label">
+        LIVE EEG · 实时脑电
+        <a class="home-link" href="home.html">✦ 返回星海</a>
+      </div>
+      <div class="eeg-readout">
+        <b id="signalBig">12</b>
+        <small>BLINK INTENSITY</small>
+        <div class="thr">THRESHOLD <b id="thresholdValue">50</b></div>
+      </div>
+      <canvas id="waveCanvas" aria-hidden="true"></canvas>
+      <div class="ctl-row" style="margin-top:8px">
+        <label>眨眼阈值<i>THRESHOLD</i></label>
+        <output id="thrOut">50</output>
+        <input id="thresholdSlider" type="range" min="5" max="100" value="50">
+      </div>
+    </section>
+
+    <!-- 左下：游戏参数调节 -->
+    <section class="pane pane-ctl" aria-label="游戏参数调节">
+      <div class="pane-label">FLIGHT TUNING · 参数调节</div>
+      <div class="ctl-list">
+        <div class="ctl-row">
+          <label>上下管道间距<i>PIPE GAP</i></label>
+          <output id="gapOut">200 px</output>
+          <input id="gapSlider" type="range" min="140" max="280" value="200">
+        </div>
+        <div class="ctl-row">
+          <label>相邻管道间距<i>SPACING</i></label>
+          <output id="spacingOut">240 px</output>
+          <input id="spacingSlider" type="range" min="150" max="360" value="240">
+        </div>
+        <div class="ctl-row">
+          <label>飞船下落速度<i>FALL SPEED</i></label>
+          <output id="gravOut">1.0×</output>
+          <input id="gravSlider" type="range" min="12" max="32" value="20">
+        </div>
+        <div class="ctl-row">
+          <label>跳跃力度<i>FLAP POWER</i></label>
+          <output id="flapOut">6.8</output>
+          <input id="flapSlider" type="range" min="40" max="100" value="68">
+        </div>
+      </div>
+      <div class="ctl-actions">
+        <button class="chip accent" id="simulateBlinkBtn">测试一次眨眼</button>
+        <button class="chip" id="resetSignalBtn">重置信号</button>
+        <button class="chip" id="connectBtn">连接 Python</button>
+      </div>
+      <div class="ctl-status" id="connectionLog">模拟信号模式 · WebSocket ws://127.0.0.1:7000 待连接</div>
+    </section>
+
+    <!-- 左下：皮肤选择 -->
+    <section class="pane pane-skin" aria-label="皮肤选择">
+      <div class="pane-label">SKIN · 皮肤</div>
+
+      <div class="skin-group">
+        <h4>飞船 · SHIP</h4>
+        <div class="swatches">
+          <button class="sw sw-bird" data-group="bird" data-key="galaxy" title="星海蓝：青蓝身、紫尾羽">
+            <span class="dot"></span><span class="lb">星海蓝</span>
+          </button>
+          <button class="sw sw-bird" data-group="bird" data-key="aurora" title="极光翠：翠绿身、薄荷翼">
+            <span class="dot"></span><span class="lb">极光翠</span>
+          </button>
+          <button class="sw sw-bird" data-group="bird" data-key="amber" title="琥珀金：暖金身、杏色翼">
+            <span class="dot"></span><span class="lb">琥珀金</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="skin-group">
+        <h4>背景 · SKY</h4>
+        <div class="swatches">
+          <button class="sw sw-sky" data-group="sky" data-key="galaxy" title="星海夜空：深蓝银河">
+            <span class="dot"></span><span class="lb">星海夜空</span>
+          </button>
+          <button class="sw sw-sky" data-group="sky" data-key="aurora" title="极光绿：青绿极光与森林雾">
+            <span class="dot"></span><span class="lb">极光绿</span>
+          </button>
+          <button class="sw sw-sky" data-group="sky" data-key="amber" title="暖金琥珀：暗金琥珀霞光">
+            <span class="dot"></span><span class="lb">暖金琥珀</span>
+          </button>
+        </div>
+      </div>
+    </section>
+    </div><!-- /left-rail -->
+
+    <!-- 右侧：游戏区 -->
+    <section class="pane pane-game" aria-label="游戏区域">
+      <canvas id="gameCanvas" aria-label="眨眼控制飞行游戏"></canvas>
+
+      <a class="brand-tag" href="home.html"><span class="dot"></span>BLINK FLIGHT</a>
+      <div class="score-hud">
+        <b id="score">0</b>
+        <span>SCORE · BEST <em id="best">0</em></span>
+      </div>
+
+      <div class="overlay" id="startOverlay">
+        <div>
+          <p class="kicker">READY WHEN YOU ARE</p>
+          <h2>准备起飞？</h2>
+          <p>眨眼 / 点击 / 按空格，让飞船向上飞。<br>左侧可调节管道与下落参数，还能换飞船和星空的皮肤。</p>
+          <button class="primary-btn" id="startBtn">开始游戏</button>
+        </div>
+      </div>
+      <div class="overlay hidden" id="overOverlay">
+        <div>
+          <p class="kicker">FLIGHT COMPLETE</p>
+          <h2>本次飞行结束</h2>
+          <p>本次得分 <b id="finalScore">0</b></p>
+          <button class="primary-btn" id="restartBtn">再飞一次</button>
+        </div>
+      </div>
+
+      <div class="game-corner">
+        <span>SPACE / CLICK / BLINK TO FLY</span>
+        <button id="pauseBtn">暂停</button>
+      </div>
+    </section>
+  </div>
+
+  <script>
+(() => {
+  // ---- 本地存储：统一加 av: 前缀，避免同域下别的项目用到同名 key 互相覆盖 ----
+  const LS = {
+    get(k){ try { return localStorage.getItem('av:' + k); } catch(e){ return null; } },
+    set(k,v){ try { localStorage.setItem('av:' + k, v); } catch(e){} }
+  };
+
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const $ = id => document.getElementById(id);
+  const gamePane = canvas.parentElement;
+
+  // ---- 可变画布尺寸：游戏区随窗口自适应 ----
+  let W = 900, H = 500;
+  let bird = {x: W*0.2, y: H*0.45, vy: 0, r: 16, rot: 0};
+  let pipes = [];
+  function sizeGame() {
+    const r = gamePane.getBoundingClientRect();
+    if (r.width < 50 || r.height < 50) return;   // 隐藏中/布局未完成时跳过
+    const nW = Math.round(r.width), nH = Math.round(r.height);
+    if (nW === W && nH === H) return;            // 尺寸没变就不动，避免每帧重设 canvas 清空画面
+
+    // 游玩中改尺寸时，按比例搬移飞船与管道，否则新管道会从旧坐标系生成、
+    // 飞船也可能一下子就跑到墙外（表现为「一拉窗口就死」）
+    const sx = nW / W, sy = nH / H;
+    if (typeof bird !== 'undefined' && bird) { bird.x *= sx; bird.y *= sy; }
+    if (typeof pipes !== 'undefined' && pipes) {
+      for (const p of pipes) { p.x *= sx; p.top *= sy; p.bottom *= sy; }
+    }
+
+    W = nW; H = nH;
+    canvas.width = W; canvas.height = H;
+  }
+  sizeGame();
+  // 首次调用时（尤其单文件外壳里 iframe 是 display:none 时才建 srcdoc）
+  // 可能量到 0×0 直接返回。多重兜底：ResizeObserver 盯游戏区本身 + 启动后
+  // 短轮询几次，确保布局稳定后一定能拿到真实尺寸。
+  if (window.ResizeObserver) {
+    new ResizeObserver(function () { sizeGame(); }).observe(gamePane);
+  }
+  window.addEventListener('load', function () { sizeGame(); sizeWave(); });
+  // 启动后 0.1s / 0.4s / 1s 再各量一次，兜住 ResizeObserver 漏报的情况
+  [100, 400, 1000].forEach(function (ms) {
+    setTimeout(function () { sizeGame(); sizeWave(); }, ms);
+  });
+
+  let state = 'ready', score = 0, best = Number(LS.get('blinkFlightBest') || 0);
+  let frame = 0, world = 0, lastTime = 0, pausedFrom = 'playing';
+  let threshold = 50, signalValue = 12, wasAbove = false, lastTrigger = 0, endAt = 0;
+  let ws = null;
+  // ---- 可调参数（左下面板） ----
+  let pipeGap = 200;          // 上下管道间距 px
+  let spacingFrames = 185;    // 相邻管道间隔（frame 数），水平距离 = 间距 × 1.3 px
+  let grav = 0.20;            // 下落加速度
+  const MAX_FALL = 2.5;
+  $('best').textContent = best;
+  $('thresholdValue').textContent = threshold;
+
+  /* ================= 皮肤系统（与反馈页三色一致：星海 / 极光 / 琥珀） ================= */
+  const BIRD_SKINS = {
+    galaxy: {
+      b0:'#e6fffb', b1:'#5fe0dc', b2:'#8b86ff',
+      wing0:'#c6fff8', wing1:'#74d2ff', crest:'#a9f8ff',
+      tail:'rgba(150,232,255,.52)', beak:'#ffcf87', eye:'#101f38',
+      rim:'rgba(220,255,252,.72)',
+      halo:'rgba(120,232,255,.30)', halo2:'rgba(126,146,255,.13)'
+    },
+    aurora: {
+      b0:'#f2fff8', b1:'#4fe0a4', b2:'#2f9d8a',
+      wing0:'#dbffec', wing1:'#63e2b4', crest:'#bcffdd',
+      tail:'rgba(150,255,208,.5)', beak:'#ffe6a8', eye:'#0c2a21',
+      rim:'rgba(226,255,240,.72)',
+      halo:'rgba(96,255,190,.28)', halo2:'rgba(150,255,215,.12)'
+    },
+    amber: {
+      b0:'#fffaea', b1:'#ffc86b', b2:'#e8894a',
+      wing0:'#ffeec6', wing1:'#f3a959', crest:'#ffe0a6',
+      tail:'rgba(255,214,148,.5)', beak:'#ffeec2', eye:'#2c1a0d',
+      rim:'rgba(255,246,214,.75)',
+      halo:'rgba(255,200,112,.30)', halo2:'rgba(255,160,92,.13)'
+    }
+  };
+  // 背景皮肤：body=页面底色 / glass=管道玻璃 / gate=管口光 / rim=外缘 / glow=空间柔光 / mist=地面雾 / line+dash=地平线
+  const SKY_SKINS = {
+    galaxy: {
+      body:['#070c18','#08101f','#03050c'],
+      glass:[[28,58,92],[96,150,190],[120,175,210],[70,120,165],[18,42,72]],
+      gate:[255,247,226], rim:[206,238,255], glow:[96,168,215],
+      mist:[6,14,26], line:[92,225,230], dash:[110,190,215]
+    },
+    aurora: {
+      body:['#05130f','#061b18','#020a08'],
+      glass:[[22,70,58],[64,178,144],[104,214,178],[52,148,124],[13,48,42]],
+      gate:[210,255,236], rim:[190,255,226], glow:[88,214,164],
+      mist:[4,18,15], line:[110,245,200], dash:[120,224,188]
+    },
+    amber: {
+      body:['#150d07','#1c1208','#0b0603'],
+      glass:[[78,48,26],[188,134,70],[218,168,104],[148,100,54],[54,32,18]],
+      gate:[255,226,170], rim:[255,232,196], glow:[235,170,95],
+      mist:[20,12,6], line:[255,196,120], dash:[240,190,130]
+    }
+  };
+  let birdSkin = LS.get('blinkBirdSkin') || 'galaxy';
+  let skySkin = LS.get('blinkSkySkin') || 'galaxy';
+  if (!BIRD_SKINS[birdSkin]) birdSkin = 'galaxy';
+  if (!SKY_SKINS[skySkin]) skySkin = 'galaxy';
+  const BD = () => BIRD_SKINS[birdSkin];
+  const SK = () => SKY_SKINS[skySkin];
+  const rgba = (c, a) => 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')';
+
+  function applySky(key) {
+    const k = SKY_SKINS[key] || SKY_SKINS.galaxy;
+    document.body.style.background =
+      'linear-gradient(158deg,' + k.body[0] + ' 0%,' + k.body[1] + ' 42%,' + k.body[2] + ' 100%)';
+    // 星海画布（另一段脚本）同步换色
+    if (typeof window.__applySkySkin === 'function') window.__applySkySkin(key);
+  }
+  function paintSwatches() {
+    document.querySelectorAll('.sw').forEach(function (el) {
+      const grp = el.dataset.group;
+      el.classList.toggle('on', grp === 'bird' ? el.dataset.key === birdSkin : el.dataset.key === skySkin);
+    });
+  }
+  document.querySelectorAll('.sw').forEach(function (el) {
+    el.addEventListener('click', function () {
+      if (el.dataset.group === 'bird') {
+        birdSkin = el.dataset.key;
+        try { LS.set('blinkBirdSkin', birdSkin); } catch (e) {}
+      } else {
+        skySkin = el.dataset.key;
+        try { LS.set('blinkSkySkin', skySkin); } catch (e) {}
+        applySky(skySkin);
+      }
+      paintSwatches();
+    });
+  });
+  paintSwatches();
+  applySky(skySkin);
+
+  // 尺寸非法的矩形直接跳过：canvas.roundRect 遇到负宽高会抛 IndexSizeError，
+  // 一旦抛出整个 requestAnimationFrame 循环就会永久停住（表现为"过一会儿眨眼也不动了"）
+  function roundedRect(x,y,w,h,r,fill){if(!(w>0)||!(h>0))return;ctx.fillStyle=fill;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill();}
+  function drawBackground(){
+    // 不再铺不透明底色：清空后让页面星海背景透上来，游戏区与首页同一片星空
+    ctx.clearRect(0,0,W,H);
+    const k = SK();
+    // 空间柔光（随皮肤换色，很淡，只做层次）
+    const glow=ctx.createRadialGradient(W*0.72,H*0.42,20,W*0.72,H*0.42,Math.max(W,H)*0.55);
+    glow.addColorStop(0,rgba(k.glow,.13));
+    glow.addColorStop(.55,rgba(k.glow,.05));
+    glow.addColorStop(1,rgba(k.glow,0));
+    ctx.fillStyle=glow;ctx.fillRect(0,0,W,H);
+    // 地面：柔和的底部雾霭 + 一条会流动的光带（没有硬边色块）
+    const mist=ctx.createLinearGradient(0,H*0.6,0,H);
+    mist.addColorStop(0,rgba(k.mist,0));
+    mist.addColorStop(.55,rgba(k.mist,.30));
+    mist.addColorStop(1,rgba(k.mist,.62));
+    ctx.fillStyle=mist;ctx.fillRect(0,H*0.6,W,H*0.4);
+    ctx.fillStyle=rgba(k.line,.55);ctx.fillRect(0,H-30,W,1.4);
+    for(let x=-(world%50);x<W;x+=50){ctx.fillStyle=rgba(k.dash,.22);ctx.fillRect(x,H-16,24,1.5);}
+  }
+  // ---- 太空飞船：尖鼻机身 + 后掠翼 + 尾鳍 + 尾喷口 + 座舱罩（配色跟随飞船皮肤）----
+  function drawBird(){
+    const s = BD();
+    const t = performance.now()/1000;
+    const thrust = 0.5 + Math.max(-0.3, Math.min(0.5, -bird.vy*0.10));
+    const flick = 0.86 + Math.sin(t*24)*0.09 + Math.sin(t*8.1)*0.05;
+
+    ctx.save();
+    ctx.translate(bird.x, bird.y);
+    ctx.rotate(bird.rot);
+    ctx.scale(1.02, 1.02);
+
+    // 1) 光晕（收敛一些，别糊掉剪影）
+    ctx.globalCompositeOperation = 'lighter';
+    const halo = ctx.createRadialGradient(0,0,6,0,0,32);
+    halo.addColorStop(0, s.halo);
+    halo.addColorStop(.6, s.halo2);
+    halo.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(0,0,32,0,Math.PI*2); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
+    // 2) 尾焰：细长喷焰（外焰橘 + 内芯白）
+    const flameLen = (13 + 9*thrust) * flick;
+    ctx.globalCompositeOperation = 'lighter';
+    let fg = ctx.createLinearGradient(-15.5,0,-15.5-flameLen,0);
+    fg.addColorStop(0,'rgba(255,238,200,.95)');
+    fg.addColorStop(.4,'rgba(255,178,96,.7)');
+    fg.addColorStop(1,'rgba(255,110,50,0)');
+    ctx.fillStyle = fg;
+    ctx.beginPath();
+    ctx.moveTo(-15.2,-3.0);
+    ctx.quadraticCurveTo(-15.5-flameLen*0.5,-1.4,-15.5-flameLen,0);
+    ctx.quadraticCurveTo(-15.5-flameLen*0.5,1.4,-15.2,3.0);
+    ctx.closePath(); ctx.fill();
+    const coreLen = flameLen*0.42;
+    fg = ctx.createLinearGradient(-15.5,0,-15.5-coreLen,0);
+    fg.addColorStop(0,'rgba(255,255,255,.95)');
+    fg.addColorStop(1,'rgba(255,245,205,0)');
+    ctx.fillStyle = fg;
+    ctx.beginPath();
+    ctx.moveTo(-15.4,-1.4);
+    ctx.quadraticCurveTo(-15.5-coreLen*0.55,-0.5,-15.5-coreLen,0);
+    ctx.quadraticCurveTo(-15.5-coreLen*0.55,0.5,-15.4,1.4);
+    ctx.closePath(); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
+    // 3) 尾喷口：深色环，锚定尾部轮廓
+    ctx.beginPath();
+    ctx.moveTo(-12.4,-4.6); ctx.lineTo(-15.8,-3.4);
+    ctx.lineTo(-15.8,3.4); ctx.lineTo(-12.4,4.6);
+    ctx.closePath();
+    ctx.fillStyle = s.b2; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = .9; ctx.stroke();
+
+    // 4) 尾鳍（上）
+    ctx.fillStyle = s.crest;
+    ctx.beginPath();
+    ctx.moveTo(-6.4,-6.2);
+    ctx.lineTo(-10.6,-13.4);
+    ctx.lineTo(-14.2,-12.2);
+    ctx.lineTo(-9.6,-5.4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,.22)'; ctx.lineWidth=.7; ctx.stroke();
+
+    // 5) 后掠主翼（上，带亮边与翼尖灯）
+    ctx.save();
+    ctx.translate(0,-1.4);
+    const wg = ctx.createLinearGradient(6,-2,-14,-11);
+    wg.addColorStop(0, s.b1);
+    wg.addColorStop(.55, s.wing1);
+    wg.addColorStop(1, s.b2);
+    ctx.fillStyle = wg;
+    ctx.beginPath();
+    ctx.moveTo(9.5,-2.0);
+    ctx.lineTo(2.0,-5.0);
+    ctx.lineTo(-11.6,-11.2);
+    ctx.lineTo(-17.4,-11.8);
+    ctx.lineTo(-12.2,-6.2);
+    ctx.lineTo(-3.0,-3.0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(9.0,-2.2); ctx.lineTo(-11.3,-11.0); ctx.stroke();
+    const lampA = 0.35 + 0.5*Math.abs(Math.sin(t*2.6));
+    ctx.fillStyle = 'rgba(150,255,220,'+lampA.toFixed(2)+')';
+    ctx.shadowColor='rgba(150,255,220,.9)'; ctx.shadowBlur=7;
+    ctx.beginPath(); ctx.arc(-16.6,-11.6,1.25,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.restore();
+
+    // 5b) 前置小翼（鸭翼）：让剪影更像飞船而不是火箭
+    ctx.save();
+    ctx.translate(13.6,-3.2);
+    ctx.fillStyle = s.wing0;
+    ctx.beginPath();
+    ctx.moveTo(4.2,-0.6);
+    ctx.lineTo(-1.0,-2.6);
+    ctx.lineTo(-6.0,-5.4);
+    ctx.lineTo(-3.2,-2.0);
+    ctx.lineTo(2.4,0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=.6; ctx.stroke();
+    ctx.restore();
+
+    // 6) 腹鳍（下，较小）
+    ctx.fillStyle = s.tail;
+    ctx.beginPath();
+    ctx.moveTo(2.0,4.4);
+    ctx.lineTo(-3.0,5.8);
+    ctx.lineTo(-8.6,10.4);
+    ctx.lineTo(-12.0,9.6);
+    ctx.lineTo(-8.0,5.2);
+    ctx.lineTo(-1.0,3.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,.2)'; ctx.lineWidth=.7; ctx.stroke();
+
+    // 7) 机身：尖鼻流线 + 上下双色分面
+    const bodyPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(26.0, -0.2);
+      ctx.bezierCurveTo(21.5, -4.6, 14.0, -7.0, 4.0, -7.2);
+      ctx.lineTo(-11.0, -5.8);
+      ctx.lineTo(-13.0, -4.6);
+      ctx.lineTo(-13.0, 4.4);
+      ctx.lineTo(-11.0, 5.6);
+      ctx.lineTo(4.0, 6.9);
+      ctx.bezierCurveTo(14.0, 6.6, 21.5, 4.2, 26.0, -0.2);
+      ctx.closePath();
+    };
+    bodyPath();
+    const bg = ctx.createLinearGradient(0,-8.4,0,8.0);
+    bg.addColorStop(0, s.b2);
+    bg.addColorStop(.42, s.b1);
+    bg.addColorStop(1, s.b0);
+    ctx.fillStyle = bg;
+    ctx.fill();
+    // 背脊高光带
+    ctx.save(); bodyPath(); ctx.clip();
+    const sheen = ctx.createLinearGradient(0,-8,0,1);
+    sheen.addColorStop(0,'rgba(255,255,255,.30)');
+    sheen.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle = sheen; ctx.fillRect(-16,-9,42,10);
+    // 腹部暗面
+    const shade = ctx.createLinearGradient(0,2,0,8);
+    shade.addColorStop(0,'rgba(0,0,0,0)');
+    shade.addColorStop(1,'rgba(0,0,0,.32)');
+    ctx.fillStyle = shade; ctx.fillRect(-16,2,42,7);
+    ctx.restore();
+
+    // 8) 座舱罩：小尺寸、带深色框，才看得出是"驾驶舱"
+    const canopy = () => {
+      ctx.beginPath();
+      ctx.moveTo(15.4,-1.7);
+      ctx.bezierCurveTo(13.0,-5.6, 7.0,-6.3, 3.4,-4.2);
+      ctx.bezierCurveTo(0.6,-2.4, 1.4,0.6, 4.6,1.0);
+      ctx.bezierCurveTo(8.6,1.4, 13.4,0.9, 15.4,-1.7);
+      ctx.closePath();
+    };
+    canopy();
+    ctx.fillStyle='rgba(9,24,38,.92)'; ctx.fill();
+    ctx.save(); canopy(); ctx.clip();
+    const cg = ctx.createLinearGradient(2,-6,15,1);
+    cg.addColorStop(0,'rgba(220,250,255,.95)');
+    cg.addColorStop(.45,'rgba(125,200,245,.88)');
+    cg.addColorStop(1,'rgba(26,74,120,.92)');
+    ctx.fillStyle = cg; ctx.fillRect(0,-7,18,9);
+    ctx.restore();
+    canopy();
+    ctx.strokeStyle='rgba(235,252,255,.55)'; ctx.lineWidth=.7; ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.9)';
+    ctx.beginPath(); ctx.ellipse(8.6,-3.6,2.2,0.8,-0.28,0,Math.PI*2); ctx.fill();
+
+    // 9) 机鼻灯 + 机身分模线
+    ctx.strokeStyle='rgba(255,255,255,.18)'; ctx.lineWidth=.8;
+    ctx.beginPath(); ctx.moveTo(-11.6,-1.0); ctx.lineTo(15.6,-2.2); ctx.stroke();
+    const noseA = 0.5 + 0.5*Math.abs(Math.sin(t*3.4));
+    ctx.fillStyle='rgba(255,240,180,'+noseA.toFixed(2)+')';
+    ctx.shadowColor='rgba(255,240,180,.95)'; ctx.shadowBlur=8;
+    ctx.beginPath(); ctx.arc(21.8,-0.2,1.4,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur=0;
+
+    // 10) 逆光轮廓
+    bodyPath();
+    ctx.strokeStyle = s.rim; ctx.lineWidth = 1.1; ctx.stroke();
+
+    ctx.restore();
+  }
+  const PIPE_W = 64;          // 管道宽度（绘制、生成、碰撞统一用这一个常量）
+  function drawPipes(){
+    const PW = PIPE_W;
+    const k = SK();
+    const gl0=k.glass[0], gl1=k.glass[1], gl2=k.glass[2], gl3=k.glass[3], gl4=k.glass[4];
+    pipes.forEach(p=>{
+      const x = p.x;
+      // 管身：通透玻璃，能看见后面的星光（随背景皮肤换色）
+      const g=ctx.createLinearGradient(x,0,x+PW,0);
+      g.addColorStop(0,rgba(gl0,.42));
+      g.addColorStop(.30,rgba(gl1,.26));
+      g.addColorStop(.52,rgba(gl2,.20));
+      g.addColorStop(.74,rgba(gl3,.26));
+      g.addColorStop(1,rgba(gl4,.44));
+      roundedRect(x,-14,PW,p.top-2,10,g);
+      roundedRect(x,p.bottom+16,PW,H-p.bottom-46,10,g);
+
+      // 内壁高光
+      ctx.fillStyle=rgba(k.rim,.26);
+      ctx.fillRect(x+7,0,2,Math.max(0,p.top-20));
+      ctx.fillRect(x+7,p.bottom+20,2,Math.max(0,H-p.bottom-52));
+
+      // 管口：柔光闸口（随皮肤取色，星海=香槟金 / 极光=薄荷白 / 琥珀=暖金）
+      const cg=ctx.createLinearGradient(x-7,0,x+PW+7,0);
+      cg.addColorStop(0,rgba(k.gate,.22));
+      cg.addColorStop(.34,rgba(k.gate,.92));
+      cg.addColorStop(.64,rgba(k.gate,.82));
+      cg.addColorStop(1,rgba(k.gate,.22));
+      ctx.shadowColor=rgba(k.gate,.6);ctx.shadowBlur=16;
+      roundedRect(x-7,p.top-18,PW+14,18,6,cg);
+      roundedRect(x-7,p.bottom,PW+14,18,6,cg);
+      ctx.shadowBlur=0;
+
+      // 管身外缘：细描边 + 轻微外发光，让管子从星空里"浮"出来
+      ctx.strokeStyle=rgba(k.rim,.46);ctx.lineWidth=1;
+      ctx.shadowColor=rgba(k.rim,.45);ctx.shadowBlur=8;
+      ctx.beginPath();ctx.roundRect(x+.5,0,PW-1,Math.max(0,p.top-16),10);ctx.stroke();
+      ctx.beginPath();ctx.roundRect(x+.5,p.bottom+16,PW-1,Math.max(0,H-p.bottom-46),10);ctx.stroke();
+      ctx.shadowBlur=0;
+    });
+  }
+  function draw(){
+    drawBackground();drawPipes();drawBird();
+  }
+  function addPipe(){
+    // 上边界 60px，下边界留 30px 地面；可用高度不足时（窗口很矮）自动缩小安全区，
+    // 保证 top ≥ 60 且 bottom ≤ H-30，不会生成负高度管道或开局即撞墙
+    const marginTop = 60, marginBottom = 30;
+    const usable = H - marginBottom - marginTop - pipeGap;   // 开口可滑动的垂直范围
+    const lo = marginTop;
+    const hi = usable > 0 ? marginTop + usable : marginTop;  // 太矮时钉在顶部
+    const top = lo + Math.random() * Math.max(0, hi - lo);
+    pipes.push({x:W+20, top:top, bottom:top+pipeGap, w:PIPE_W, passed:false});
+  }
+  function startGame(){
+    state='playing';score=0;frame=0;world=0;pipes=[];
+    bird={x:W*0.2,y:H*0.45,vy:0,r:16,rot:0};
+    $('score').textContent='0';$('startOverlay').classList.add('hidden');$('overOverlay').classList.add('hidden');$('pauseBtn').textContent='暂停';addPipe();lastTime=performance.now();
+  }
+  function endGame(){
+    if(state!=='playing')return;state='over';endAt=performance.now();$('finalScore').textContent=score;$('overOverlay').classList.remove('hidden');
+    if(score>best){best=score;LS.set('blinkFlightBest', best);$('best').textContent=best;}
+  }
+  let flapPower=6.8;   // 跳跃力度（由「跳跃力度」滑杆实时调节）
+  function flap(){
+    if(state!=='playing')return;
+    bird.vy=-flapPower;
+    bird.rot=-0.38;
+  }
+  function update(dt){
+    if(state!=='playing')return;
+    const step=Math.min(dt/16.67,2);
+    frame+=step;world+=1.6*step;
+    // 上升段仍按重力减速（决定跳跃高度）；一旦开始下落就锁定 MAX_FALL，匀速下降
+    bird.vy=bird.vy+grav*step;
+    if(bird.vy>=0)bird.vy=MAX_FALL;
+    bird.y+=bird.vy*step;
+    bird.rot=Math.max(-.45,Math.min(.9,bird.vy*.08));
+    // 柱子按横向距离生成：上一根离右边缘足够远才生成新的一根，避免重叠重影
+    if(!pipes.length||(W-pipes[pipes.length-1].x)>=spacingFrames*1.3)addPipe();
+    pipes.forEach(p=>{p.x-=1.3*step;if(!p.passed&&p.x+p.w<bird.x){p.passed=true;score++;$('score').textContent=score;}});
+    pipes=pipes.filter(p=>p.x>-100);
+    if(bird.y-bird.r<0||bird.y+bird.r>H-30){endGame();}
+    for(const p of pipes){const hitX=bird.x+bird.r>p.x&&bird.x-bird.r<p.x+p.w;const hitY=bird.y-bird.r<p.top||bird.y+bird.r>p.bottom;if(hitX&&hitY)endGame();}
+  }
+  // 主循环加保护：任何单帧绘制异常都不能打断 requestAnimationFrame 链
+  function loop(t){
+    const dt=lastTime?t-lastTime:16.67;lastTime=t;
+    try{update(dt);draw();}catch(err){console.warn('frame error',err);}
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // ---- 信号 → 左上波形 ----
+  const waveCv = $('waveCanvas'), wctx = waveCv.getContext('2d');
+  let waveHist = [], waveAcc = 0;
+  function sizeWave() {
+    const r = waveCv.getBoundingClientRect();
+    if (r.width < 20) return;
+    waveCv.width = Math.round(r.width); waveCv.height = Math.round(Math.max(60, r.height));
+  }
+  sizeWave();
+
+  // 预填一段平线历史：打开页面就是静息状态
+  function seedWave() {
+    const n = Math.ceil(waveCv.width / 3) + 2;
+    waveHist.length = 0;
+    for (let i = 0; i < n; i++) {
+      waveHist.push(12 + (Math.random() - 0.5) * 2.4);
+    }
+  }
+  seedWave();
+
+  function drawWave() {
+    const w = waveCv.width, h = waveCv.height;
+    // 以中线为中心映射（0 值贴底、100 值贴顶，50 在中线），比贴底更像脑电曲线
+    const yOf = v => h * 0.56 - ((Math.max(0, Math.min(100, v)) / 100) - 0.5) * (h * 0.78);
+    wctx.clearRect(0, 0, w, h);
+    // 极淡网格
+    wctx.strokeStyle = 'rgba(190,214,255,.07)';
+    wctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
+      const y = h * i / 4;
+      wctx.beginPath(); wctx.moveTo(0, y); wctx.lineTo(w, y); wctx.stroke();
+    }
+    // 阈值虚线
+    const ty = yOf(threshold);
+    wctx.strokeStyle = 'rgba(255,220,150,.4)';
+    wctx.setLineDash([4, 5]);
+    wctx.beginPath(); wctx.moveTo(0, ty); wctx.lineTo(w, ty); wctx.stroke();
+    wctx.setLineDash([]);
+    if (waveHist.length < 2) return;
+    // 主波形：青→紫渐变描边 + 光晕
+    const grad = wctx.createLinearGradient(0, 0, w, 0);
+    grad.addColorStop(0, 'rgba(92,225,230,.06)');
+    grad.addColorStop(.5, 'rgba(92,225,230,.9)');
+    grad.addColorStop(1, 'rgba(170,150,255,.98)');
+    wctx.strokeStyle = grad;
+    wctx.lineWidth = 1.8;
+    wctx.lineJoin = 'round';
+    wctx.shadowColor = 'rgba(120,220,255,.6)';
+    wctx.shadowBlur = 9;
+    wctx.beginPath();
+    const n = waveHist.length;
+    for (let i = 0; i < n; i++) {
+      const x = w - (n - 1 - i) * 3;
+      const y = yOf(waveHist[i]);
+      i === 0 ? wctx.moveTo(x, y) : wctx.lineTo(x, y);
+    }
+    wctx.stroke();
+    wctx.shadowBlur = 0;
+    // 最新点高亮
+    const lv = waveHist[n - 1];
+    const ly = yOf(lv);
+    wctx.fillStyle = lv >= threshold ? '#ffc879' : '#bfeaff';
+    wctx.shadowColor = wctx.fillStyle; wctx.shadowBlur = 10;
+    wctx.beginPath(); wctx.arc(w - 2, ly, 2.4, 0, Math.PI * 2); wctx.fill();
+    wctx.shadowBlur = 0;
+  }
+
+  // ---- 眨眼：直接事件驱动（不依赖阈值跳变，任何游戏状态下都有效） ----
+  // 之前依赖 signalValue 跨阈值，一旦 wasAbove 卡住或处于 paused/over 状态就再也跳不起来
+  function onBlink(){
+    const now=performance.now();
+    if(now-lastTrigger<200)return;      // 眨眼防抖 200ms
+    lastTrigger=now;
+    // 真实信号与模拟信号统一行为：待开始 / 刚结束 → 眨眼即开局
+    // 结束画面加 600ms 保护期，避免「撞死那一下的眨眼」直接把新局开局
+    if(state==='ready'){startGame();flap();log('眨眼开局 · 飞船已推进');return;}
+    if(state==='over'){
+      if(now-(endAt||0)<600)return;
+      startGame();flap();log('眨眼重开 · 飞船已推进');return;
+    }
+    if(state!=='playing')return;        // 暂停中忽略
+    flap();
+    log('最近眨眼 '+new Date().toLocaleTimeString('zh-CN',{hour12:false})+' · 飞船已推进');
+  }
+  function setSignal(v){
+    signalValue=Math.max(0,Math.min(100,Number(v)||0));
+    $('signalBig').textContent=Math.round(signalValue);
+    const above=signalValue>=threshold, now=performance.now();
+    if(above&&!wasAbove&&now-lastTrigger>260){pushSpike();if(state==='ready'||state==='over')startGame();flap();lastTrigger=now;}
+    wasAbove=above;
+  }
+  function updateThreshold(v){
+    threshold=Number(v);
+    $('thresholdValue').textContent=threshold;$('thrOut').textContent=threshold;
+    if(signalValue<threshold)wasAbove=false;setSignal(signalValue);
+  }
+
+  // ---- 接收器地址：默认 ws://127.0.0.1:7000，可用 ?port=8000 或 ?ws=ws://host:port 覆盖 ----
+  // 端口被占用时不用改代码，换一个参数就行（接收器端用 --ws-port 同步改）
+  const WS_URL = (function () {
+    try {
+      const q = new URLSearchParams(location.search);
+      if (q.get('ws')) return q.get('ws');
+      if (q.get('port')) return 'ws://127.0.0.1:' + q.get('port');
+    } catch (e) {}
+    return 'ws://127.0.0.1:7000';
+  })();
+
+  // ---- 参数滑杆 ----
+  $('thresholdSlider').addEventListener('input',e=>updateThreshold(e.target.value));
+  $('gapSlider').addEventListener('input',e=>{
+    pipeGap=Number(e.target.value);
+    $('gapOut').textContent=pipeGap+' px';
+  });
+  $('spacingSlider').addEventListener('input',e=>{
+    const px=Number(e.target.value);
+    spacingFrames=Math.round(px/1.3);
+    $('spacingOut').textContent=px+' px';
+  });
+  $('gravSlider').addEventListener('input',e=>{
+    grav=Number(e.target.value)/100;
+    $('gravOut').textContent=(grav/0.20).toFixed(1)+'×';
+  });
+  $('flapSlider').addEventListener('input',e=>{
+    flapPower=Number(e.target.value)/10;
+    $('flapOut').textContent=flapPower.toFixed(1);
+  });
+
+  $('simulateBlinkBtn').addEventListener('click',()=>{setSignal(Math.min(100,threshold+22));setTimeout(()=>setSignal(Math.max(5,threshold-25)),220);});
+  $('resetSignalBtn').addEventListener('click',()=>setSignal(12));
+  $('startBtn').addEventListener('click',startGame);$('restartBtn').addEventListener('click',startGame);
+  $('pauseBtn').addEventListener('click',()=>{if(state==='playing'){pausedFrom=state;state='paused';$('pauseBtn').textContent='继续';}else if(state==='paused'){state=pausedFrom;$('pauseBtn').textContent='暂停';lastTime=performance.now();}});
+  $('gameCanvas').addEventListener('pointerdown',()=>flap());
+  window.addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();flap();}});
+  window.addEventListener('keyup',e=>{if(e.code==='Space'||e.code==='ArrowUp')setSignal(12);});
+
+  function log(s){$('connectionLog').textContent=s;}
+  // 单文件版：iframe 内被浏览器「本地网络访问」策略拦截，无法直连 127.0.0.1，
+  // 因此改为请求外层壳代连 WebSocket，再把消息转发进来；独立打开时回退为直连。
+  let relayMode = false, relayOpen = false, retryCount = 0;
+  function handleMsg(raw){
+    try{
+      const d=JSON.parse(raw);
+      if(Array.isArray(d.eeg)){pushRealEEG(d.eeg);return;}
+      if(d.blink===true){onBlink();if(!realWave)setSignal(Math.min(100,threshold+20));return;}
+      if(d.blink===false){if(!realWave)setSignal(12);return;}
+      if(typeof d.value==='number')setSignal(d.value);
+      else if(typeof d.blink_strength==='number')setSignal(d.blink_strength);
+      else log('收到数据，但格式不匹配。请发送 {"value": 数字}');
+    }catch(err){log('收到非 JSON 数据。请发送 JSON，例如 {"value": 68}');}
+  }
+  window.addEventListener('message',function(e){
+    const d=e.data||{};
+    if(!relayMode)return;
+    if(d.wsState==='open'){relayOpen=true;retryCount=0;$('connectBtn').textContent='断开连接';log('已连接 Python · 实时脑电波形显示中，眨眼即跳跃');}
+    else if(d.wsState==='error'){relayOpen=false;$('connectBtn').textContent='重新连接';log('连接失败：请先启动本地 Python WebSocket 服务。仍可用模拟测试。');}
+    else if(d.wsState==='close'){
+      relayOpen=false;
+      // 连接意外中断（接收器重启/半死连接）：自动重连，最多 8 次
+      if(retryCount<8){
+        retryCount++;
+        $('connectBtn').textContent='重连中…';
+        log('连接中断，正在自动重连（第 '+retryCount+' 次）…');
+        setTimeout(()=>{if(relayMode&&!relayOpen)parent.postMessage({wsCmd:'open',url:WS_URL},'*');},1200);
+      }else{$('connectBtn').textContent='连接 Python';log('连接已断开 · 请确认接收器正在运行后重新连接');}
+    }
+    else if(typeof d.wsData==='string'){handleMsg(d.wsData);}
+  });
+  $('connectBtn').addEventListener('click',()=>{
+    // 合并版：走外壳代理
+    if(window.parent&&window.parent!==window){
+      relayMode=true;
+      if(relayOpen){parent.postMessage({wsCmd:'close'},'*');relayOpen=false;$('connectBtn').textContent='连接 Python';log('模拟信号模式 · 已断开');return;}
+      $('connectBtn').textContent='正在连接…';
+      parent.postMessage({wsCmd:'open',url:WS_URL},'*');
+      setTimeout(()=>{if(!relayOpen&&$('connectBtn').textContent==='正在连接…'){log('连接失败：请先启动本地 Python WebSocket 服务。仍可用模拟测试。');$('connectBtn').textContent='重新连接';}},7000);
+      return;
+    }
+    // 独立打开：直连
+    if(ws&&ws.readyState===WebSocket.OPEN){ws.close();return;}
+    try{
+      ws=new WebSocket(WS_URL);
+      $('connectBtn').textContent='正在连接…';
+      ws.onopen=()=>{$('connectBtn').textContent='断开连接';log('已连接 Python · 实时脑电波形显示中，眨眼即跳跃');};
+      ws.onmessage=ev=>handleMsg(ev.data);
+      ws.onerror=()=>{log('连接失败：请先启动本地 Python WebSocket 服务。仍可用模拟测试。');$('connectBtn').textContent='重新连接';};
+      ws.onclose=()=>{$('connectBtn').textContent='连接 Python';log('模拟信号模式 · WebSocket 待连接');};
+    }catch(e){log('浏览器无法建立连接。');}
+  });
+
+  // ---- 波形：平时平线，飞船推进（=检测到眨眼）时生成随机高度波峰 ----
+  // 波峰以队列方式逐点进入历史，与波形滚动节奏一致
+  let spikeQueue = [];
+  function pushSpike(){
+    const h = 55 + Math.random() * 40;   // 峰高 55~95，每次随机
+    for(let i = 1; i <= 3; i++) spikeQueue.push(12 + (h - 12) * i / 4);  // 上升沿
+    spikeQueue.push(h);                                                   // 峰顶
+    for(let i = 3; i >= 1; i--) spikeQueue.push(12 + (h - 12) * i / 4);  // 下降沿
+  }
+  let wfLast = 0;
+  function waveLoop(t) {
+    if (t - wfLast > 45) {
+      wfLast = t;
+      if(!realWave){
+        if (spikeQueue.length) {
+          // 波峰播放中：逐点输出，不叠底噪
+          waveHist.push(spikeQueue.shift());
+        } else {
+          // 平线：静息值 12 + 极轻微噪声
+          waveHist.push(12 + (Math.random() - 0.5) * 2.4);
+        }
+        const maxN = Math.ceil(waveCv.width / 3) + 4;
+        while (waveHist.length > maxN) waveHist.shift();
+      }
+    }
+    drawWave();
+    requestAnimationFrame(waveLoop);
+  }
+  // ---- 真实脑电：Python 端已去直流基线，{"eeg":[微伏...]} 直接推入历史 ----
+  let realWave = false;
+  function pushRealEEG(arr){
+    realWave = true;
+    const maxN = Math.ceil(waveCv.width / 3) + 4;
+    for(const v of arr){
+      // 0µV = 中线 50，增益 0.35 → ±135µV 才到上下边，慢漂移不再把波形顶满全屏
+      waveHist.push(50 + Math.max(-47, Math.min(47, v * 0.35)));
+    }
+    while(waveHist.length > maxN) waveHist.shift();
+    const last = arr[arr.length-1];
+    $('signalBig').textContent = Math.round(last * 10) / 10;
+  }
+  requestAnimationFrame(waveLoop);
+
+  // ---- 窗口变化：尺寸随时同步（sizeGame 内部会按比例搬移飞船与管道） ----
+  let rzT = 0;
+  window.addEventListener('resize', function () {
+    clearTimeout(rzT);
+    rzT = setTimeout(function () {
+      sizeWave();
+      sizeGame();
+    }, 160);
+  });
+
+  updateThreshold(threshold);setSignal(12);
+})();
+  </script>
+
+  <!-- 星海背景：与首页 aurora-home 完全同一套渲染（斜向银河 + 分层星流 + 暗尘纹理） -->
+  <script>
+  (function () {
+    'use strict';
+    const TAU = Math.PI * 2;
+    const cv = document.getElementById('bgStars');
+    if (!cv) return;
+    const cx = cv.getContext('2d');
+
+    function mulberry32(a){return function(){a|=0;a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};}
+    const rnd = mulberry32(20261106);
+    const rr = (a,b) => a + rnd()*(b-a);
+
+    // ---- 三套天空配色（与反馈页、实验室页统一：星海 / 极光 / 琥珀） ----
+    const SKY = {
+      galaxy: {
+        bg: ['#070c18', '#08101f', '#03050c'],
+        neb: [[70,112,190],[86,96,200],[46,82,150],[150,176,240],[246,222,184],[210,178,132]],
+        star: ['#ffffff','#ffffff','#ffffff','#f8fbff','#e9f0ff','#fff6e2','#f6dfb6','#e8c78d'],
+        core: [[255,250,236],[255,234,200],[150,185,255]]
+      },
+      aurora: {
+        bg: ['#05130f', '#061b18', '#020a08'],
+        neb: [[42,150,120],[56,186,150],[30,118,108],[168,242,214],[238,255,226],[196,238,168]],
+        star: ['#ffffff','#f6fffb','#e2fff2','#c8ffe6','#aef7d4','#f8ffe9','#e6ffd8','#cdf0b4'],
+        core: [[240,255,246],[198,255,226],[150,235,205]]
+      },
+      amber: {
+        bg: ['#150d07', '#1c1208', '#0b0603'],
+        neb: [[168,108,50],[198,140,72],[130,80,40],[250,218,168],[255,238,196],[236,190,120]],
+        star: ['#ffffff','#fffbf2','#fff3dd','#ffe8bd','#ffdba4','#fff6e4','#f9dfae','#f0c98a'],
+        core: [[255,250,236],[255,228,180],[235,178,116]]
+      }
+    };
+    let skyKey = LS.get('blinkSkySkin') || 'galaxy';
+    if (!SKY[skyKey]) skyKey = 'galaxy';
+    const LAYERS = [
+      { n: 1150, sp: 5.5, size: [0.45, 1.05], a: 0.62, near: 0 },
+      { n: 720,  sp: 14,  size: [0.6, 1.45],  a: 0.8,  near: 0.45 },
+      { n: 260,  sp: 30,  size: [0.9, 2.0],   a: 0.95, near: 1 }
+    ];
+    const BAND_STARS = 3400;
+    const GLOW_STARS = 26;
+
+    let stars = [], neb = null, W = 0, H = 0, DPR = 1, DIAG = 0, S = 0, R = 0;
+    let bgGrad = null, vigGrad = null;
+
+    function buildNebula() {
+      const SZ = 1000;
+      neb = document.createElement('canvas');
+      neb.width = SZ; neb.height = SZ;
+      const g = neb.getContext('2d');
+      const pal = SKY[skyKey].neb;
+      // 1) 星云絮状团：沿对角线(右上→左下)
+      g.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 300; i++) {
+        const u = rnd();
+        const along = -0.94 + u * 1.88;
+        const n = (rnd() + rnd() + rnd() - 1.5) * 0.185;
+        const x = SZ * 0.5 + (along * 0.707 - n * 0.707) * SZ * 1.05;
+        const y = SZ * 0.5 + (-along * 0.707 - n * 0.707) * SZ * 1.05;
+        const r = rr(SZ * 0.035, SZ * 0.10);
+        const c = pal[(rnd() * pal.length) | 0];
+        const a = rr(0.010, 0.030);
+        const rad = g.createRadialGradient(x, y, 0, x, y, r);
+        rad.addColorStop(0, 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')');
+        rad.addColorStop(0.5, 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + (a * 0.3) + ')');
+        rad.addColorStop(1, 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',0)');
+        g.fillStyle = rad;
+        g.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+      // 2) 银河乳白主带
+      for (let i = 0; i < 68; i++) {
+        const u = i / 67;
+        const along = -0.92 + u * 1.84;
+        const n = (rnd() + rnd() - 1) * 0.085;
+        const x = SZ * 0.5 + (along * 0.707 - n * 0.707) * SZ * 1.02;
+        const y = SZ * 0.5 + (-along * 0.707 - n * 0.707) * SZ * 1.02;
+        const r = rr(SZ * 0.055, SZ * 0.11);
+        const mid = Math.sin(u * Math.PI);
+        const a = rr(0.036, 0.072) * (0.35 + mid * 0.95);
+        const core = SKY[skyKey].core;
+        const rad = g.createRadialGradient(x, y, 0, x, y, r);
+        rad.addColorStop(0, 'rgba(' + core[0].join(',') + ',' + a + ')');
+        rad.addColorStop(0.35, 'rgba(' + core[1].join(',') + ',' + (a * 0.42) + ')');
+        rad.addColorStop(1, 'rgba(' + core[2].join(',') + ',0)');
+        g.fillStyle = rad;
+        g.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+      // 3) 亮核：偏右上，暖白
+      const cg = g.createRadialGradient(SZ*0.66, SZ*0.34, 0, SZ*0.66, SZ*0.34, SZ*0.24);
+      const kc = SKY[skyKey].core;
+      cg.addColorStop(0, 'rgba(' + kc[0].join(',') + ',0.18)');
+      cg.addColorStop(0.18, 'rgba(' + kc[1].join(',') + ',0.13)');
+      cg.addColorStop(0.5, 'rgba(' + kc[2].join(',') + ',0.05)');
+      cg.addColorStop(1, 'rgba(' + kc[2].join(',') + ',0)');
+      g.fillStyle = cg;
+      g.fillRect(0, 0, SZ, SZ);
+      // 4) 暗尘带纹理
+      g.globalCompositeOperation = 'destination-out';
+      for (let i = 0; i < 74; i++) {
+        const u = rnd();
+        const along = -0.85 + u * 1.7;
+        const n = (rnd() - 0.5) * 0.15;
+        const x = SZ * 0.5 + (along * 0.707 - n * 0.707) * SZ * 1.02;
+        const y = SZ * 0.5 + (-along * 0.707 - n * 0.707) * SZ * 1.02;
+        const rx = rr(SZ * 0.02, SZ * 0.09);
+        const ry = rx * rr(0.18, 0.42);
+        g.save();
+        g.translate(x, y);
+        g.rotate(-Math.PI / 4 + rr(-0.25, 0.25));
+        const rad = g.createRadialGradient(0, 0, 0, 0, 0, rx);
+        rad.addColorStop(0, 'rgba(0,0,0,' + rr(0.10, 0.24) + ')');
+        rad.addColorStop(0.6, 'rgba(0,0,0,0.18)');
+        rad.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = rad;
+        g.beginPath();
+        g.ellipse(0, 0, rx, ry, 0, 0, TAU);
+        g.fill();
+        g.restore();
+      }
+    }
+
+    // 颜色索引：暖色（金）占约三成，其余冷白
+    const pickCi = () => (rnd() < 0.3 ? 6 + ((rnd() * 2) | 0) : (rnd() * 5) | 0);
+    function applyStarPalette() {
+      const pal = SKY[skyKey].star;
+      for (let i = 0; i < stars.length; i++) {
+        stars[i].col = pal[stars[i].ci % pal.length];
+      }
+    }
+
+    function buildStars() {
+      stars = [];
+      const dens = S < 720 ? 0.55 : 1;
+      for (let li = 0; li < LAYERS.length; li++) {
+        const L = LAYERS[li];
+        const ln = Math.round(L.n * dens);
+        for (let i = 0; i < ln; i++) {
+          stars.push({
+            x: rr(-R, R), y: rr(-R, R),
+            sp: L.sp * rr(0.72, 1.3),
+            sz: rr(L.size[0], L.size[1]),
+            a: L.a * rr(0.68, 1.0),
+            ci: pickCi(),
+            tw: rr(0.7, 2.8),
+            ph: rr(0, TAU),
+            near: L.near
+          });
+        }
+      }
+      // 银河带：沿斜线密集星尘
+      for (let i = 0; i < Math.round(BAND_STARS * dens); i++) {
+        const along = rr(-1, 1) * R * 0.98;
+        const perp = (rnd() + rnd() + rnd() - 1.5) * R * 0.062;
+        stars.push({
+          x: -0.707 * along + 0.707 * perp,
+          y: 0.707 * along + 0.707 * perp,
+          sp: rr(2.5, 11),
+          sz: rr(0.3, 0.98),
+          a: rr(0.32, 0.9),
+          ci: pickCi(),
+          tw: rr(0.6, 2.4),
+          ph: rr(0, TAU),
+          near: rnd() < 0.14 ? 1 : 0
+        });
+      }
+      // 银河带外缘羽化星尘
+      for (let i = 0; i < Math.round(1500 * dens); i++) {
+        const along = rr(-1, 1) * R * 0.98;
+        const perp = (rnd() + rnd() + rnd() - 1.5) * R * 0.24;
+        stars.push({
+          x: -0.707 * along + 0.707 * perp,
+          y: 0.707 * along + 0.707 * perp,
+          sp: rr(2, 9),
+          sz: rr(0.28, 0.7),
+          a: rr(0.10, 0.34),
+          ci: pickCi(),
+          tw: rr(0.6, 2.0),
+          ph: rr(0, TAU),
+          near: 0
+        });
+      }
+      // 少量带光晕的亮星
+      for (let i = 0; i < GLOW_STARS; i++) {
+        const along = rr(-1, 1) * R * 0.92;
+        const perp = (rnd() + rnd() + rnd() - 1.5) * R * 0.12;
+        stars.push({
+          x: -0.707 * along + 0.707 * perp,
+          y: 0.707 * along + 0.707 * perp,
+          sp: rr(3, 9),
+          sz: rr(1.2, 2.3),
+          a: rr(0.75, 1),
+          ci: rnd() < 0.72 ? 0 : 6,
+          tw: rr(0.5, 1.6),
+          ph: rr(0, TAU),
+          near: 0,
+          glow: true
+        });
+      }
+    }
+
+    function buildGradients() {
+      const bgc = SKY[skyKey].bg;
+      bgGrad = cx.createLinearGradient(0, 0, W * 0.35, H);
+      bgGrad.addColorStop(0, bgc[0]);
+      bgGrad.addColorStop(0.42, bgc[1]);
+      bgGrad.addColorStop(1, bgc[2]);
+      vigGrad = cx.createRadialGradient(W * 0.5, H * 0.48, S * 0.26, W * 0.5, H * 0.48, DIAG * 0.68);
+      vigGrad.addColorStop(0, 'rgba(2,4,10,0)');
+      vigGrad.addColorStop(0.62, 'rgba(2,4,10,0.14)');
+      vigGrad.addColorStop(1, 'rgba(1,2,6,0.6)');
+    }
+
+    function resize() {
+      DPR = Math.min(window.devicePixelRatio || 1, 2);
+      // 优先量游戏区 .pane-game 的可见尺寸：它是正常文档流，任何环境都能测准；
+      // 而 position:fixed 的 bgStars 和 window.innerWidth 在 iframe 未布局时都会是 0
+      const pane = document.querySelector('.pane-game');
+      const rect = (pane && pane.getBoundingClientRect()) || cv.getBoundingClientRect();
+      W = rect.width || window.innerWidth || document.documentElement.clientWidth || 0;
+      H = rect.height || window.innerHeight || document.documentElement.clientHeight || 0;
+      if (W < 2 || H < 2) return;   // 还没布局，等下次 resize 再量
+      cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+      DIAG = Math.hypot(W, H);
+      S = Math.min(W, H);
+      R = DIAG * 0.86;
+      buildStars();
+      applyStarPalette();
+      buildGradients();
+    }
+
+    // 供皮肤面板调用：换天空配色（重建星云 + 底色 + 星点色板，几何数据不动）
+    window.__applySkySkin = function (key) {
+      if (!SKY[key]) return;
+      skyKey = key;
+      buildNebula();
+      buildGradients();
+      applyStarPalette();
+    };
+
+    let last = 0;
+    function frame(now) {
+      const dt = Math.min((now - last) / 1000 || 0.016, 0.05);
+      last = now;
+      const t = now / 1000;
+
+      cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      cx.globalCompositeOperation = 'source-over';
+      cx.fillStyle = bgGrad;
+      cx.fillRect(0, 0, W, H);
+
+      // 斜向银河
+      cx.globalCompositeOperation = 'lighter';
+      if (neb) {
+        const ns = (DIAG * 1.22) / neb.width;
+        cx.save();
+        cx.translate(W / 2, H / 2);
+        cx.scale(ns, ns);
+        cx.globalAlpha = 0.86;
+        cx.drawImage(neb, -neb.width / 2, -neb.height / 2);
+        cx.restore();
+        cx.globalAlpha = 1;
+      }
+
+      // 星流：沿右上→左下流动 + 闪烁
+      const Fx = -0.707, Fy = 0.707;
+      for (let i = 0; i < stars.length; i++) {
+        const s = stars[i];
+        const v = s.sp * dt * (0.35 + (s.near || 0) * 0.65);
+        s.x += Fx * v; s.y += Fy * v;
+        if (s.x < -60) { s.x += W + 120; s.y -= H + 120; }
+        if (s.y > H + 60) { s.x -= W + 120; s.y -= H + 120; }
+        const tw = 0.6 + 0.4 * Math.sin(t * s.tw + s.ph);
+        let a = s.a * (0.45 + tw * 0.65);
+        if (a <= 0.01) continue;
+        const px = ((s.x % (W + 120)) + W + 120) % (W + 120) - 60;
+        const py = ((s.y % (H + 120)) + H + 120) % (H + 120) - 60;
+
+        if (s.glow) {
+          const gr = s.sz * 4.2;
+          const g = cx.createRadialGradient(px, py, 0, px, py, gr);
+          g.addColorStop(0, 'rgba(255,255,255,' + (a * 0.85) + ')');
+          g.addColorStop(0.25, 'rgba(255,244,220,' + (a * 0.3) + ')');
+          g.addColorStop(1, 'rgba(255,240,210,0)');
+          cx.globalAlpha = 1;
+          cx.fillStyle = g;
+          cx.beginPath(); cx.arc(px, py, gr, 0, TAU); cx.fill();
+        }
+        cx.globalAlpha = Math.min(1, a);
+        cx.fillStyle = s.col;
+        if (s.sz < 0.85) {
+          cx.fillRect(px - 0.5, py - 0.5, 1.1, 1.1);
+        } else {
+          cx.beginPath(); cx.arc(px, py, s.sz * 0.62, 0, TAU); cx.fill();
+        }
+      }
+
+      // 暗角
+      cx.globalCompositeOperation = 'source-over';
+      cx.globalAlpha = 1;
+      cx.fillStyle = vigGrad;
+      cx.fillRect(0, 0, W, H);
+      requestAnimationFrame(frame);
+    }
+
+    buildNebula();
+    resize();
+    // iframe（单文件外壳）里首次 resize() 时窗口可能还是 0 或默认尺寸，
+    // 用 ResizeObserver + 短轮询兜底，布局稳定后重新量一次
+    if (window.ResizeObserver) {
+      new ResizeObserver(function () { resize(); }).observe(document.body);
+    }
+    [100, 400, 1000].forEach(function (ms) { setTimeout(resize, ms); });
+    // 若实验室面板存过背景皮肤，进来就按它渲染
+    try {
+      const savedSky = LS.get('blinkSkySkin');
+      if (savedSky && SKY[savedSky]) window.__applySkySkin(savedSky);
+    } catch (e) {}
+    let rzT = 0;
+    window.addEventListener('resize', function(){ clearTimeout(rzT); rzT = setTimeout(resize, 150); });
+    requestAnimationFrame(frame);
+  })();
+  </script>
+  <script src="nav.js"></script>
+</body>
+</html>

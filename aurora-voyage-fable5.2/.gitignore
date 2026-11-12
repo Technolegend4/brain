@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.csv
+*.edf
+Blink_Experiment_01/
+.venv/

@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>AURORA · 沉浸浏览</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:#02040a;
+    font-family:"Helvetica Neue",-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:#eef3ff;-webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  #sky{position:fixed;inset:0;z-index:0;display:block;}
+
+  /* ---------- 顶栏 ---------- */
+  .top{
+    position:fixed;top:0;left:0;right:0;z-index:10;
+    display:flex;justify-content:space-between;align-items:center;
+    padding:clamp(18px,2.6vw,30px) clamp(22px,3.4vw,46px);
+    background:linear-gradient(to bottom,rgba(2,4,10,.82),rgba(2,4,10,0));
+  }
+  .brand{display:flex;align-items:center;gap:10px;text-decoration:none;}
+  .brand .dot{
+    width:7px;height:7px;border-radius:50%;background:#fff;
+    box-shadow:0 0 10px 2px rgba(255,238,205,.9),0 0 26px 8px rgba(226,190,126,.35);
+    animation:breathe 4s ease-in-out infinite;
+  }
+  @keyframes breathe{0%,100%{opacity:.55;transform:scale(.85)}50%{opacity:1;transform:scale(1.15)}}
+  .brand b{
+    font-size:13px;font-weight:500;letter-spacing:.42em;text-transform:uppercase;
+    color:#f8f4e9;text-shadow:0 0 18px rgba(255,236,198,.45);
+  }
+  .back{
+    display:flex;align-items:center;gap:8px;
+    font-size:11px;letter-spacing:.24em;color:rgba(214,226,248,.6);
+    text-decoration:none;padding:8px 4px;
+    transition:color .3s;
+  }
+  .back:hover{color:#f6d9a4;}
+  .back::before{
+    content:"←";font-size:13px;opacity:.65;line-height:1;
+    transition:transform .3s,opacity .3s;
+  }
+  .back:hover::before{transform:translateX(-3px);opacity:1;}
+
+  /* ---------- 右侧进度 ---------- */
+  .rail{
+    position:fixed;right:clamp(16px,2.6vw,34px);top:50%;transform:translateY(-50%);
+    z-index:10;display:flex;flex-direction:column;gap:0;align-items:center;
+  }
+  .rail .node{
+    width:22px;height:22px;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;pointer-events:auto;
+  }
+  .rail .node i{
+    width:5px;height:5px;border-radius:50%;
+    background:rgba(214,226,248,.28);transition:all .4s;
+  }
+  .rail .node.on i{
+    background:#fff;
+    box-shadow:0 0 8px 2px rgba(255,238,205,.8),0 0 20px 6px rgba(226,190,126,.3);
+    transform:scale(1.4);
+  }
+  .rail .seg{width:1px;height:clamp(26px,4.4vh,44px);background:rgba(255,255,255,.10);}
+  .rail .tip{
+    position:absolute;right:26px;white-space:nowrap;
+    font-size:10px;letter-spacing:.22em;color:rgba(240,214,164,.0);
+    transition:color .3s;pointer-events:none;
+  }
+  .rail .node:hover .tip,.rail .node.on .tip{color:rgba(240,214,164,.85);}
+
+  /* ---------- 章节 ---------- */
+  main{position:relative;z-index:2;}
+  .sec{
+    min-height:100vh;
+    display:flex;flex-direction:column;justify-content:center;
+    padding:16vh clamp(26px,8vw,140px);
+    max-width:1200px;margin:0 auto;
+  }
+  .sec .kicker{
+    font-size:11px;letter-spacing:.42em;text-transform:uppercase;
+    color:rgba(238,205,150,.75);margin-bottom:26px;
+    display:flex;align-items:center;gap:14px;
+  }
+  .sec .kicker::before{content:"";width:34px;height:1px;background:rgba(238,205,150,.4);}
+  .sec h2{
+    font-size:clamp(30px,4.6vw,54px);font-weight:300;letter-spacing:.1em;
+    line-height:1.28;color:#f8f4e9;
+    text-shadow:0 2px 30px rgba(0,0,0,.9),0 0 40px rgba(255,236,198,.12);
+    margin-bottom:30px;
+  }
+  .sec h2 em{font-style:normal;color:#f6dfb6;}
+  .sec p{
+    font-size:clamp(14px,1.35vw,17px);font-weight:300;line-height:2.15;
+    letter-spacing:.08em;color:rgba(220,230,250,.72);
+    max-width:640px;
+    text-shadow:0 1px 14px rgba(0,0,0,.9);
+  }
+  .sec p+p{margin-top:18px;}
+  .sec p b{color:#f6e7c8;font-weight:500;}
+  .sec .go{
+    margin-top:44px;display:inline-flex;align-items:center;gap:12px;
+    font-size:12px;letter-spacing:.3em;color:#f6d9a4;text-decoration:none;
+    transition:letter-spacing .35s,color .35s;
+    width:max-content;
+  }
+  .sec .go::after{
+    content:"";width:44px;height:1px;background:rgba(246,217,164,.55);
+    transition:width .35s;
+  }
+  .sec .go:hover{letter-spacing:.4em;color:#fff;}
+  .sec .go:hover::after{width:66px;background:#fff;}
+
+  /* 首屏 */
+  .hero{align-items:center;text-align:center;}
+  .hero h2{font-size:clamp(40px,7vw,84px);font-weight:200;letter-spacing:.3em;margin-bottom:22px;}
+  .hero .sub{
+    font-size:clamp(12px,1.3vw,15px);letter-spacing:.5em;color:rgba(214,226,248,.55);
+    text-transform:uppercase;
+  }
+  .hero .kicker{justify-content:center;}
+  .hero .kicker::after{content:"";width:34px;height:1px;background:rgba(238,205,150,.4);}
+
+  /* 尾屏 */
+  .fin{align-items:center;text-align:center;}
+  .fin p{max-width:520px;}
+  .links{margin-top:52px;display:flex;gap:clamp(24px,5vw,72px);flex-wrap:wrap;justify-content:center;}
+  .links a{
+    font-size:12px;letter-spacing:.32em;color:#f6d9a4;text-decoration:none;
+    padding:10px 2px;border-bottom:1px solid rgba(246,217,164,.28);
+    transition:color .3s,border-color .3s;
+  }
+  .links a:hover{color:#fff;border-color:rgba(255,255,255,.7);}
+
+  /* 数字装饰 */
+  .sec .num{
+    position:absolute;right:clamp(8px,4vw,60px);top:50%;transform:translateY(-50%);
+    font-size:clamp(90px,16vw,220px);font-weight:200;letter-spacing:0;
+    color:transparent;-webkit-text-stroke:1px rgba(214,226,248,.10);
+    pointer-events:none;user-select:none;
+  }
+  .sec{position:relative;}
+
+  /* 入场动画 */
+  .rv{opacity:0;transform:translateY(46px);transition:opacity 1.1s cubic-bezier(.2,.6,.2,1),transform 1.1s cubic-bezier(.2,.6,.2,1);}
+  .rv.d1{transition-delay:.12s;}
+  .rv.d2{transition-delay:.26s;}
+  .rv.d3{transition-delay:.4s;}
+  .sec.vis .rv{opacity:1;transform:none;}
+
+  /* 底部渐隐融合 */
+  .fadeEdge{
+    position:fixed;left:0;right:0;bottom:0;height:12vh;z-index:3;pointer-events:none;
+    background:linear-gradient(to bottom,rgba(2,4,10,0),rgba(2,4,10,.55));
+  }
+
+  @media (max-width:640px){
+    .rail{right:6px}
+    .rail .tip{display:none}
+    .sec{padding-left:24px;padding-right:34px;}
+    .sec .num{opacity:.5}
+    .back{letter-spacing:.16em}
+  }
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+
+<header class="top">
+  <a class="brand" href="home.html"><i class="dot"></i><b>Aurora Lab</b></a>
+  <a class="back" href="home.html">返回星海</a>
+</header>
+
+<nav class="rail" id="rail"></nav>
+
+<main>
+  <section class="sec hero" id="s0" data-name="序幕">
+    <div class="kicker rv">Immersion</div>
+    <h2 class="rv d1">沉 浸 浏 览</h2>
+    <div class="sub rv d2">Scroll · 银河之下的一次慢速漂流</div>
+  </section>
+
+  <section class="sec" id="s1" data-name="缘起">
+    <div class="num">01</div>
+    <div class="kicker rv">Origin</div>
+    <h2 class="rv d1">当思绪<em>有了形状</em></h2>
+    <p class="rv d2">我们总以为意识是看不见的。但在脑电图的波形里，每一次专注、每一次走神、每一次眨眼，都留下微弱的痕迹——像夜里划过的星，<b>短暂，却真实存在</b>。</p>
+    <p class="rv d3">这个项目想做的，就是把这些痕迹挂到天上：让脑波成为星海，让注视成为航行。</p>
+  </section>
+
+  <section class="sec" id="s2" data-name="神经元">
+    <div class="num">02</div>
+    <div class="kicker rv">Neurons</div>
+    <h2 class="rv d1">神经元，是<em>最小的星</em></h2>
+    <p class="rv d2">一颗神经元看起来像宇宙的微缩模型：轴突伸向远方，树突彼此靠近又彼此孤离，突触之间以电流与递质传递消息——正如星光跨越光年抵达另一颗星。</p>
+    <p class="rv d3">首页那片缓缓流动的银汉，三个亮起的入口，就是按这个隐喻画出来的：<b>每一次同步闪烁，都是一次神经信号的齐放。</b></p>
+  </section>
+
+  <section class="sec" id="s3" data-name="眨眼飞行">
+    <div class="num">03</div>
+    <div class="kicker rv">Play</div>
+    <h2 class="rv d1">眨一下眼，<em>就飞过一颗星</em></h2>
+    <p class="rv d2">在实验室里，你戴上脑电环，一条实时波形在屏幕左侧游走。当软件捕捉到你眨眼的瞬间，那只小小的飞船便向上跳跃，穿过一道道玻璃管道。</p>
+    <p class="rv d3">不借助手，不借助键盘——<b>身体最本能的动作，成了唯一的控制器。</b>这是整个项目最接近"魔法"的一刻。</p>
+    <a class="go rv d3" href="lab.html">进入脑波实验室</a>
+  </section>
+
+  <section class="sec" id="s4" data-name="个性化">
+    <div class="num">04</div>
+    <div class="kicker rv">Personal</div>
+    <h2 class="rv d1">你的星海，<em>由你定义</em></h2>
+    <p class="rv d2">每个人注视夜空的心情不同。你可以把这片星海换成极光、换成暖金，也可以写下此刻的感受——它们会像漂流瓶一样，被存在你自己的浏览器里。</p>
+    <a class="go rv d3" href="connect.html">去定制与反馈</a>
+  </section>
+
+  <section class="sec fin" id="s5" data-name="终章">
+    <div class="kicker rv">Fin</div>
+    <h2 class="rv d1">仰望，<em>即是参与</em></h2>
+    <p class="rv d2">当足够多的人开始在意自己脑中的光，意识就不再只是生理名词——它有了可以被注视、被把玩、被分享的形状。</p>
+    <div class="links rv d3">
+      <a href="home.html">回到星海</a>
+      <a href="lab.html">脑波实验室</a>
+      <a href="connect.html">关于与反馈</a>
+    </div>
+  </section>
+</main>
+
+<div class="fadeEdge"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------------- 星海背景（滚动视差版） ---------------- */
+  const TAU = Math.PI * 2;
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rnd = mulberry32(20261108);
+  const rr = (a, b) => a + rnd() * (b - a);
+
+  const canvas = document.getElementById('sky');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  let W = 0, H = 0, DPR = 1, R = 0;
+  let stars = [], neb = null, bgGrad = null;
+  let scrollY = 0, scrollN = 0;
+  let time = 0, lastT = 0;
+
+  const FLOW = { x: -0.882, y: 0.471 };
+  const STAR_COLORS = [
+    '#ffffff', '#ffffff', '#ffffff', '#f8fbff',
+    '#e9f0ff', '#fff6e2', '#f6dfb6', '#e8c78d'
+  ];
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    R = Math.hypot(W, H) * 0.9;
+    buildStars();
+    buildGradients();
+  }
+
+  function buildStars() {
+    stars = [];
+    const dens = Math.min(W, H) < 720 ? 0.5 : 1;
+    const layers = [
+      { n: 420, sp: 4, size: [0.45, 1.0], a: 0.55, depth: 0.25 },
+      { n: 300, sp: 9, size: [0.6, 1.4], a: 0.75, depth: 0.55 },
+      { n: 140, sp: 18, size: [0.9, 1.9], a: 0.9, depth: 1 }
+    ];
+    for (let li = 0; li < layers.length; li++) {
+      const L = layers[li];
+      for (let i = 0; i < Math.round(L.n * dens); i++) {
+        stars.push({
+          x: rr(-R, R), y: rr(-R, R),
+          sp: L.sp * rr(0.7, 1.3),
+          sz: rr(L.size[0], L.size[1]),
+          a: L.a * rr(0.65, 1),
+          col: STAR_COLORS[(rnd() * STAR_COLORS.length) | 0],
+          tw: rr(0.7, 2.6), ph: rr(0, TAU),
+          depth: L.depth
+        });
+      }
+    }
+    // 沿斜向银河带铺一层细碎星尘
+    for (let i = 0; i < Math.round(1300 * dens); i++) {
+      const along = rr(-1, 1) * R * 0.95;
+      const perp = (rnd() + rnd() + rnd() - 1.5) * R * 0.10;
+      stars.push({
+        x: -0.707 * along + 0.707 * perp,
+        y: 0.707 * along + 0.707 * perp,
+        sp: rr(2, 7), sz: rr(0.3, 0.9), a: rr(0.28, 0.85),
+        col: rnd() < 0.2 ? '#ffeecd' : STAR_COLORS[(rnd() * 4) | 0],
+        tw: rr(0.6, 2.2), ph: rr(0, TAU),
+        depth: rnd() < 0.3 ? 0.7 : 0.3
+      });
+    }
+    // 少量光晕亮星
+    for (let i = 0; i < 14; i++) {
+      stars.push({
+        x: rr(-R, R), y: rr(-R, R),
+        sp: rr(3, 7), sz: rr(1.3, 2.2), a: rr(0.7, 1),
+        col: rnd() < 0.7 ? '#ffffff' : '#ffeecd',
+        tw: rr(0.5, 1.4), ph: rr(0, TAU),
+        depth: rr(0.4, 1), glow: true
+      });
+    }
+  }
+
+  function buildNebula() {
+    const SZ = 1000;
+    neb = document.createElement('canvas');
+    neb.width = SZ; neb.height = SZ;
+    const g = neb.getContext('2d');
+    const pal = [
+      [70, 112, 190], [86, 96, 200], [46, 82, 150],
+      [150, 176, 240], [246, 222, 184], [210, 178, 132]
+    ];
+    g.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 130; i++) {
+      const u = rnd();
+      const along = -0.55 + u * 1.1;
+      const n = (rnd() + rnd() + rnd() - 1.5) * 0.185;
+      const x = SZ * 0.5 + (along * 0.707 - n * 0.707) * SZ * 1.05;
+      const y = SZ * 0.5 + (-along * 0.707 - n * 0.707) * SZ * 1.05;
+      const r = rr(SZ * 0.035, SZ * 0.10);
+      const c = pal[(rnd() * pal.length) | 0];
+      const a = rr(0.010, 0.028);
+      const rad = g.createRadialGradient(x, y, 0, x, y, r);
+      rad.addColorStop(0, 'rgba(' + c.join(',') + ',' + a + ')');
+      rad.addColorStop(0.5, 'rgba(' + c.join(',') + ',' + (a * 0.3) + ')');
+      rad.addColorStop(1, 'rgba(' + c.join(',') + ',0)');
+      g.fillStyle = rad;
+      g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    for (let i = 0; i < 40; i++) {
+      const u = i / 39;
+      const along = -0.55 + u * 1.10;
+      const n = (rnd() - 0.5) * 0.055;
+      const x = SZ * 0.5 + (along * 0.707 - n * 0.707) * SZ * 1.02;
+      const y = SZ * 0.5 + (-along * 0.707 - n * 0.707) * SZ * 1.02;
+      const r = rr(SZ * 0.055, SZ * 0.11);
+      const mid = Math.sin(u * Math.PI);
+      const a = rr(0.05, 0.09) * (0.35 + mid * 0.95);
+      const rad = g.createRadialGradient(x, y, 0, x, y, r);
+      rad.addColorStop(0, 'rgba(255,250,238,' + a + ')');
+      rad.addColorStop(0.35, 'rgba(214,228,255,' + (a * 0.42) + ')');
+      rad.addColorStop(1, 'rgba(150,180,255,0)');
+      g.fillStyle = rad;
+      g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    const cx = SZ * 0.66, cy = SZ * 0.34;
+    const cg = g.createRadialGradient(cx, cy, 0, cx, cy, SZ * 0.24);
+    cg.addColorStop(0, 'rgba(255,250,236,0.16)');
+    cg.addColorStop(0.18, 'rgba(255,234,200,0.11)');
+    cg.addColorStop(0.5, 'rgba(150,185,255,0.04)');
+    cg.addColorStop(1, 'rgba(110,145,235,0)');
+    g.fillStyle = cg;
+    g.fillRect(0, 0, SZ, SZ);
+  }
+
+  function buildGradients() {
+    bgGrad = ctx.createLinearGradient(0, 0, W * 0.35, H);
+    bgGrad.addColorStop(0, '#070c18');
+    bgGrad.addColorStop(0.42, '#08101f');
+    bgGrad.addColorStop(1, '#03050c');
+  }
+
+  function frame(now) {
+    if (!lastT) lastT = now;
+    let dt = Math.min((now - lastT) / 1000, 0.05);
+    lastT = now;
+    time += dt;
+    scrollN += (scrollY - scrollN) * Math.min(1, dt * 3.2);
+
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // 星云：随滚动轻微下沉
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.save();
+    ctx.translate(W / 2, H * 0.42 - scrollN * 0.05 % (H * 2));
+    ctx.rotate(0.29);
+    const ns = (Math.hypot(W, H) * 1.24) / neb.width;
+    ctx.scale(ns, ns);
+    ctx.globalAlpha = 0.55;
+    ctx.drawImage(neb, -neb.width / 2, -neb.height / 2);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+
+    // 星星：视差 + 缓慢流动
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < stars.length; i++) {
+      const s = stars[i];
+      s.x += FLOW.x * s.sp * dt;
+      s.y += FLOW.y * s.sp * dt;
+      if (s.x < -R) s.x += R * 2;
+      if (s.y > R) s.y -= R * 2;
+
+      const px = W / 2 + s.x * (0.9 + s.depth * 0.1);
+      const py = H / 2 + s.y * (0.9 + s.depth * 0.1) - scrollN * s.depth * 0.22;
+      if (px < -60 || px > W + 60 || py < -60 || py > H + 60) continue;
+
+      const tw = 0.62 + 0.38 * Math.sin(time * s.tw + s.ph);
+      let a = s.a * (0.55 + tw * 0.6);
+      if (a <= 0.012) continue;
+
+      if (s.glow) {
+        const gr = s.sz * 7;
+        const g2 = ctx.createRadialGradient(px, py, 0, px, py, gr);
+        g2.addColorStop(0, 'rgba(255,255,255,' + Math.min(1, a) + ')');
+        g2.addColorStop(0.12, 'rgba(255,252,240,' + (a * 0.8) + ')');
+        g2.addColorStop(0.32, 'rgba(255,238,204,' + (a * 0.18) + ')');
+        g2.addColorStop(1, 'rgba(255,226,180,0)');
+        ctx.fillStyle = g2;
+        ctx.beginPath(); ctx.arc(px, py, gr, 0, TAU); ctx.fill();
+        continue;
+      }
+
+      ctx.globalAlpha = Math.min(1, a * 1.1);
+      ctx.fillStyle = s.col;
+      if (s.sz < 0.85) {
+        ctx.fillRect(px - 0.55, py - 0.55, 1.1, 1.1);
+      } else {
+        ctx.beginPath(); ctx.arc(px, py, s.sz * 0.62, 0, TAU); ctx.fill();
+        if (s.sz > 1.5) {
+          const l = s.sz * 5.5;
+          ctx.globalAlpha = Math.min(0.4, a * 0.4);
+          ctx.strokeStyle = s.col; ctx.lineWidth = 0.7;
+          ctx.beginPath();
+          ctx.moveTo(px - l, py); ctx.lineTo(px + l, py);
+          ctx.moveTo(px, py - l); ctx.lineTo(px, py + l);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // 暗角
+    ctx.globalCompositeOperation = 'source-over';
+    const vg = ctx.createRadialGradient(W / 2, H * 0.48, Math.min(W, H) * 0.3, W / 2, H * 0.48, Math.hypot(W, H) * 0.7);
+    vg.addColorStop(0, 'rgba(2,4,10,0)');
+    vg.addColorStop(1, 'rgba(1,2,6,0.55)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------------- 章节进入动画 + 侧边导航 ---------------- */
+  const secs = Array.prototype.slice.call(document.querySelectorAll('.sec'));
+  const rail = document.getElementById('rail');
+
+  secs.forEach(function (sec, i) {
+    if (i > 0) {
+      const seg = document.createElement('i');
+      seg.className = 'seg';
+      rail.appendChild(seg);
+    }
+    const node = document.createElement('div');
+    node.className = 'node';
+    node.innerHTML = '<i></i><span class="tip">' + sec.dataset.name + '</span>';
+    node.addEventListener('click', function () {
+      sec.scrollIntoView({ behavior: 'smooth' });
+    });
+    rail.appendChild(node);
+    sec.__node = node;
+  });
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) {
+          en.target.classList.add('vis');
+          if (en.intersectionRatio > 0.5) {
+            secs.forEach(function (s) { s.__node.classList.toggle('on', s === en.target); });
+          }
+        }
+      });
+    }, { threshold: [0.12, 0.5] });
+    secs.forEach(function (s) { io.observe(s); });
+  } else {
+    secs.forEach(function (s) { s.classList.add('vis'); });
+  }
+
+  window.addEventListener('scroll', function () {
+    scrollY = window.scrollY || window.pageYOffset;
+  }, { passive: true });
+
+  window.addEventListener('resize', function () {
+    clearTimeout(window.__rzTimer);
+    window.__rzTimer = setTimeout(resize, 120);
+  });
+
+  resize();
+  buildNebula();
+  scrollY = window.scrollY || 0;
+  requestAnimationFrame(frame);
+})();
+</script>
+  <script src="nav.js"></script>
+</body>
+</html>
