@@ -40,7 +40,7 @@ flap() 飞船推进
 pip install -r requirements.txt
 ```
 
-### 2. 启动接收器
+### 2. 启动接收器。
 
 - **Windows**：双击 `start_receiver.bat`（首次运行会自动装依赖）
 - **macOS / Linux**：`./start_receiver.sh`（首次运行会建 `.venv` 虚拟环境）
