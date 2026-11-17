@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>AURORA · 关于与反馈</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    background:#02040a;
+    font-family:"Helvetica Neue",-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:#eef3ff;-webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  #sky{position:fixed;inset:0;z-index:0;display:block;transition:opacity .6s;}
+  :root{
+    --accent:#f6d9a4;
+    --accent-soft:rgba(246,217,164,.75);
+    --accent-line:rgba(246,217,164,.32);
+  }
+  body.theme-aurora{
+    --accent:#a8f0dc;
+    --accent-soft:rgba(168,240,220,.75);
+    --accent-line:rgba(168,240,220,.32);
+  }
+  body.theme-amber{
+    --accent:#ffc98a;
+    --accent-soft:rgba(255,201,138,.8);
+    --accent-line:rgba(255,201,138,.35);
+  }
+
+  /* ---------- 顶栏 ---------- */
+  .top{
+    position:fixed;top:0;left:0;right:0;z-index:10;
+    display:flex;justify-content:space-between;align-items:center;
+    padding:clamp(18px,2.6vw,30px) clamp(22px,3.4vw,46px);
+    background:linear-gradient(to bottom,rgba(2,4,10,.82),rgba(2,4,10,0));
+  }
+  .brand{display:flex;align-items:center;gap:10px;text-decoration:none;}
+  .brand .dot{
+    width:7px;height:7px;border-radius:50%;background:#fff;
+    box-shadow:0 0 10px 2px rgba(255,238,205,.9),0 0 26px 8px rgba(226,190,126,.35);
+    animation:breathe 4s ease-in-out infinite;
+  }
+  @keyframes breathe{0%,100%{opacity:.55;transform:scale(.85)}50%{opacity:1;transform:scale(1.15)}}
+  .brand b{
+    font-size:13px;font-weight:500;letter-spacing:.42em;text-transform:uppercase;
+    color:#f8f4e9;text-shadow:0 0 18px rgba(255,236,198,.45);
+  }
+  .back{
+    font-size:11px;letter-spacing:.24em;color:rgba(214,226,248,.6);
+    text-decoration:none;padding:8px 4px;transition:color .3s;
+  }
+  .back:hover{color:var(--accent);}
+
+  /* ---------- 主体 ---------- */
+  main{
+    position:relative;z-index:2;max-width:760px;margin:0 auto;
+    padding:calc(clamp(90px,14vh,140px)) clamp(26px,6vw,60px) 18vh;
+  }
+  .kicker{
+    font-size:11px;letter-spacing:.42em;text-transform:uppercase;
+    color:var(--accent-soft);margin-bottom:22px;
+    display:flex;align-items:center;gap:14px;
+  }
+  .kicker::before{content:"";width:34px;height:1px;background:var(--accent-line);}
+  h1{
+    font-size:clamp(32px,4.8vw,52px);font-weight:300;letter-spacing:.12em;line-height:1.3;
+    color:#f8f4e9;margin-bottom:22px;
+    text-shadow:0 2px 30px rgba(0,0,0,.9),0 0 40px rgba(255,236,198,.12);
+  }
+  h1 em{font-style:normal;color:var(--accent);}
+  .lead{
+    font-size:clamp(14px,1.3vw,16px);font-weight:300;line-height:2.1;letter-spacing:.08em;
+    color:rgba(220,230,250,.7);margin-bottom:56px;
+    text-shadow:0 1px 14px rgba(0,0,0,.9);
+  }
+
+  h3{
+    font-size:12px;font-weight:500;letter-spacing:.4em;text-transform:uppercase;
+    color:rgba(238,205,150,.8);margin:58px 0 24px;
+    display:flex;align-items:center;gap:14px;
+  }
+  h3::after{content:"";flex:1;height:1px;background:rgba(255,255,255,.07);}
+
+  /* ---------- 皮肤切换 ---------- */
+  .skins{display:flex;gap:18px;flex-wrap:wrap;}
+  .skin{
+    position:relative;cursor:pointer;border:none;background:none;
+    width:132px;text-align:left;padding:0;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .skin .swatch{
+    width:132px;height:84px;border-radius:12px;position:relative;overflow:hidden;
+    border:1px solid rgba(255,255,255,.10);
+    transition:border-color .35s,box-shadow .35s,transform .35s;
+  }
+  .skin:hover .swatch{transform:translateY(-3px);}
+  .skin.on .swatch{
+    border-color:var(--accent);
+    box-shadow:0 0 22px rgba(255,238,205,.22),0 6px 24px rgba(0,0,0,.5);
+  }
+  .skin .swatch i{position:absolute;border-radius:50%;background:#fff;}
+  .skin .name{
+    margin-top:12px;font-size:11px;letter-spacing:.26em;
+    color:rgba(214,226,248,.6);transition:color .3s;
+  }
+  .skin.on .name{color:var(--accent);}
+  .skin .check{
+    position:absolute;top:8px;right:8px;width:18px;height:18px;border-radius:50%;
+    background:var(--accent);color:#0a0e18;font-size:11px;line-height:18px;text-align:center;
+    opacity:0;transform:scale(.5);transition:all .3s;
+  }
+  .skin.on .check{opacity:1;transform:scale(1);}
+
+  /* swatch 背景 */
+  .skin[data-skin="galaxy"] .swatch{background:linear-gradient(135deg,#070c18,#12203a 60%,#1a2c50);}
+  .skin[data-skin="aurora"] .swatch{background:linear-gradient(135deg,#04121a,#0a3a3a 55%,#0e5548);}
+  .skin[data-skin="amber"]  .swatch{background:linear-gradient(135deg,#140b04,#3a2410 55%,#57391a);}
+
+  /* ---------- 反馈表单 ---------- */
+  .moods{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:30px;}
+  .mood{
+    cursor:pointer;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.03);
+    color:rgba(214,226,248,.65);border-radius:999px;
+    padding:9px 20px;font-size:12px;letter-spacing:.2em;font-family:inherit;
+    transition:all .3s;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  }
+  .mood:hover{border-color:rgba(255,255,255,.35);color:#fff;}
+  .mood.on{
+    border-color:var(--accent);color:var(--accent);
+    box-shadow:0 0 16px rgba(255,238,205,.15) inset,0 0 10px rgba(255,238,205,.12);
+  }
+  textarea{
+    width:100%;min-height:130px;resize:vertical;
+    background:rgba(8,14,28,.55);border:1px solid rgba(255,255,255,.12);
+    border-radius:14px;color:#eef3ff;font-family:inherit;
+    font-size:14px;line-height:2;letter-spacing:.06em;
+    padding:18px 20px;outline:none;
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    transition:border-color .3s,box-shadow .3s;
+  }
+  textarea::placeholder{color:rgba(200,214,240,.3);}
+  textarea:focus{border-color:var(--accent-line);box-shadow:0 0 24px rgba(255,238,205,.08);}
+  .submit{
+    margin-top:24px;cursor:pointer;border:none;font-family:inherit;
+    background:linear-gradient(135deg,rgba(255,240,210,.16),rgba(226,190,126,.10));
+    border:1px solid var(--accent-line);color:var(--accent);
+    border-radius:999px;padding:14px 44px;
+    font-size:12px;letter-spacing:.34em;
+    transition:all .35s;
+  }
+  .submit:hover{
+    color:#fff;border-color:var(--accent);
+    box-shadow:0 0 28px rgba(255,238,205,.2);
+    letter-spacing:.42em;
+  }
+  .submit:disabled{opacity:.45;cursor:default;letter-spacing:.34em;box-shadow:none;}
+
+  /* ---------- 已提交的漂流瓶 ---------- */
+  .bottles{display:flex;flex-direction:column;gap:16px;}
+  .bottle{
+    padding:18px 22px;border-radius:14px;
+    background:rgba(8,14,28,.5);border:1px solid rgba(255,255,255,.08);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    animation:bottleIn .6s cubic-bezier(.2,.7,.3,1);
+  }
+  @keyframes bottleIn{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:none;}}
+  .bottle .meta{
+    display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;
+    font-size:10px;letter-spacing:.2em;color:rgba(200,214,240,.45);
+  }
+  .bottle .meta .tag{color:var(--accent);}
+  .bottle .txt{font-size:13px;line-height:2;color:rgba(230,238,255,.8);letter-spacing:.06em;}
+  .empty{font-size:12px;letter-spacing:.16em;color:rgba(200,214,240,.35);padding:6px 0;}
+
+  /* toast */
+  #toast{
+    position:fixed;left:50%;bottom:clamp(60px,10vh,110px);transform:translate(-50%,14px);
+    padding:11px 24px;border-radius:999px;
+    background:rgba(10,16,30,.72);border:1px solid var(--accent-line);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    font-size:12px;letter-spacing:.14em;color:#f6e7c8;
+    opacity:0;pointer-events:none;transition:opacity .35s,transform .35s;z-index:9;
+  }
+  #toast.show{opacity:1;transform:translate(-50%,0);}
+
+  footer{
+    position:relative;z-index:2;text-align:center;
+    padding-bottom:clamp(30px,5vh,54px);
+    font-size:10px;letter-spacing:.3em;color:rgba(200,214,240,.3);
+  }
+  footer a{color:rgba(240,214,164,.6);text-decoration:none;transition:color .3s;}
+  footer a:hover{color:#fff;}
+</style>
+</head>
+<body class="theme-galaxy">
+<canvas id="sky"></canvas>
+
+<header class="top">
+  <a class="brand" href="home.html"><i class="dot"></i><b>Aurora Lab</b></a>
+  <a class="back" href="home.html">返回星海</a>
+</header>
+
+<main>
+  <div class="kicker">Connect</div>
+  <h1>这片星海，<em>听你的</em></h1>
+  <p class="lead">换一种夜空的颜色，或者，往星海里丢一只漂流瓶——写下你此刻的感受、想法或建议，它们会被好好收在这里。</p>
+
+  <h3>Skin · 换一片夜空</h3>
+  <div class="skins" id="skins">
+    <button class="skin on" data-skin="galaxy">
+      <div class="swatch"><i style="width:4px;height:4px;left:18%;top:30%"></i><i style="width:3px;height:3px;left:44%;top:62%"></i><i style="width:5px;height:5px;left:72%;top:28%;box-shadow:0 0 8px 3px rgba(255,238,205,.6)"></i><i style="width:2px;height:2px;left:60%;top:74%"></i><i style="width:3px;height:3px;left:30%;top:70%"></i></div>
+      <div class="name">星海夜空</div><div class="check">✓</div>
+    </button>
+    <button class="skin" data-skin="aurora">
+      <div class="swatch"><i style="width:4px;height:4px;left:22%;top:26%;background:#cffff0"></i><i style="width:3px;height:3px;left:48%;top:58%;background:#cffff0"></i><i style="width:5px;height:5px;left:74%;top:32%;background:#cffff0;box-shadow:0 0 8px 3px rgba(168,240,220,.6)"></i><i style="width:2px;height:2px;left:62%;top:72%;background:#cffff0"></i></div>
+      <div class="name">极光绿</div><div class="check">✓</div>
+    </button>
+    <button class="skin" data-skin="amber">
+      <div class="swatch"><i style="width:4px;height:4px;left:20%;top:30%;background:#ffe4c0"></i><i style="width:3px;height:3px;left:46%;top:60%;background:#ffe4c0"></i><i style="width:5px;height:5px;left:70%;top:26%;background:#ffe4c0;box-shadow:0 0 8px 3px rgba(255,201,138,.6)"></i><i style="width:2px;height:2px;left:58%;top:74%;background:#ffe4c0"></i></div>
+      <div class="name">暖金琥珀</div><div class="check">✓</div>
+    </button>
+  </div>
+
+  <h3>Reflect · 写下此刻</h3>
+  <div class="moods" id="moods">
+    <button class="mood on" data-mood="喜欢">喜欢</button>
+    <button class="mood" data-mood="平静">平静</button>
+    <button class="mood" data-mood="好奇">好奇</button>
+    <button class="mood" data-mood="惊喜">惊喜</button>
+    <button class="mood" data-mood="建议">建议</button>
+    <button class="mood" data-mood="吐槽">吐槽</button>
+  </div>
+  <textarea id="fbText" maxlength="300" placeholder="今夜的星海，让你想起了什么？（最多 300 字）"></textarea>
+  <div><button class="submit" id="fbSend">投 进 星 海</button></div>
+
+  <h3>Bottles · 漂流瓶</h3>
+  <div class="bottles" id="bottles"></div>
+</main>
+
+<footer><a href="home.html">AURORA LAB</a> · 意识与星海的交界</footer>
+
+<div id="toast"></div>
+
+<script>
+  // ---- 本地存储：统一加 av: 前缀，避免同域下别的项目用到同名 key 互相覆盖 ----
+  const LS = {
+    get(k){ try { return localStorage.getItem('av:' + k); } catch(e){ return null; } },
+    set(k,v){ try { localStorage.setItem('av:' + k, v); } catch(e){} }
+  };
+
+(function () {
+  'use strict';
+
+  /* ---------------- 主题化星海背景 ---------------- */
+  const TAU = Math.PI * 2;
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rnd = mulberry32(20261108);
+  const rr = (a, b) => a + rnd() * (b - a);
+
+  const canvas = document.getElementById('sky');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  let W = 0, H = 0, DPR = 1, R = 0;
+  let stars = [];
+  let time = 0, lastT = 0;
+
+  const FLOW = { x: -0.882, y: 0.471 };
+
+  // 三套主题：背景渐变 + 星云色调 + 星色
+  const THEMES = {
+    galaxy: {
+      bg: ['#070c18', '#08101f', '#03050c'],
+      nebulas: [[70, 112, 190], [86, 96, 200], [150, 176, 240]],
+      core: [255, 250, 236],
+      starMix: 0.22   // 金色星占比
+    },
+    aurora: {
+      bg: ['#03121a', '#052a2e', '#020a0e'],
+      nebulas: [[40, 190, 160], [60, 150, 190], [140, 240, 210]],
+      core: [220, 255, 244],
+      starMix: 0.08
+    },
+    amber: {
+      bg: ['#140b04', '#2a1a0c', '#0c0703'],
+      nebulas: [[210, 140, 70], [190, 110, 60], [255, 205, 150]],
+      core: [255, 232, 200],
+      starMix: 0.5
+    }
+  };
+  const COLD = ['#ffffff', '#ffffff', '#f8fbff', '#e9f0ff', '#dfe8ff'];
+  const GOLD = ['#fff6e2', '#f6dfb6', '#e8c78d', '#ffeecd'];
+
+  let theme = 'galaxy';
+  let nebImg = null;
+
+  function starColors() {
+    const t = THEMES[theme];
+    return t.starMix > 0
+      ? COLD.concat(COLD, GOLD.slice(0, Math.round(GOLD.length * t.starMix * 2)))
+      : COLD.slice();
+  }
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    R = Math.hypot(W, H) * 0.9;
+    buildStars();
+  }
+
+  function buildStars() {
+    stars = [];
+    const cols = starColors();
+    const dens = Math.min(W, H) < 720 ? 0.5 : 1;
+    const layers = [
+      { n: 340, sp: 4, size: [0.45, 1.0], a: 0.5, depth: 0.3 },
+      { n: 230, sp: 9, size: [0.6, 1.4], a: 0.7, depth: 0.6 },
+      { n: 110, sp: 18, size: [0.9, 1.9], a: 0.9, depth: 1 }
+    ];
+    for (let li = 0; li < layers.length; li++) {
+      const L = layers[li];
+      for (let i = 0; i < Math.round(L.n * dens); i++) {
+        stars.push({
+          x: rr(-R, R), y: rr(-R, R),
+          sp: L.sp * rr(0.7, 1.3), sz: rr(L.size[0], L.size[1]),
+          a: L.a * rr(0.65, 1),
+          col: cols[(rnd() * cols.length) | 0],
+          tw: rr(0.7, 2.6), ph: rr(0, TAU), depth: L.depth
+        });
+      }
+    }
+    for (let i = 0; i < Math.round(800 * dens); i++) {
+      const along = rr(-1, 1) * R * 0.95;
+      const perp = (rnd() + rnd() + rnd() - 1.5) * R * 0.11;
+      stars.push({
+        x: -0.707 * along + 0.707 * perp,
+        y: 0.707 * along + 0.707 * perp,
+        sp: rr(2, 7), sz: rr(0.3, 0.9), a: rr(0.25, 0.8),
+        col: rnd() < THEMES[theme].starMix ? GOLD[(rnd() * GOLD.length) | 0] : COLD[(rnd() * COLD.length) | 0],
+        tw: rr(0.6, 2.2), ph: rr(0, TAU), depth: rnd() < 0.3 ? 0.7 : 0.3
+      });
+    }
+    for (let i = 0; i < 10; i++) {
+      stars.push({
+        x: rr(-R, R), y: rr(-R, R),
+        sp: rr(3, 7), sz: rr(1.3, 2.2), a: rr(0.7, 1),
+        col: rnd() < 0.7 ? '#ffffff' : '#ffeecd',
+        tw: rr(0.5, 1.4), ph: rr(0, TAU), depth: rr(0.4, 1), glow: true
+      });
+    }
+  }
+
+  function buildNebula() {
+    const t = THEMES[theme];
+    const SZ = 900;
+    const cv = document.createElement('canvas');
+    cv.width = SZ; cv.height = SZ;
+    const g = cv.getContext('2d');
+    g.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 110; i++) {
+      const u = rnd();
+      const along = -0.55 + u * 1.1;
+      const n = (rnd() + rnd() + rnd() - 1.5) * 0.185;
+      const x = SZ * 0.5 + (along * 0.707 - n * 0.707) * SZ * 1.05;
+      const y = SZ * 0.5 + (-along * 0.707 - n * 0.707) * SZ * 1.05;
+      const r = rr(SZ * 0.04, SZ * 0.10);
+      const c = t.nebulas[(rnd() * t.nebulas.length) | 0];
+      const a = rr(0.012, 0.03);
+      const rad = g.createRadialGradient(x, y, 0, x, y, r);
+      rad.addColorStop(0, 'rgba(' + c.join(',') + ',' + a + ')');
+      rad.addColorStop(0.5, 'rgba(' + c.join(',') + ',' + (a * 0.3) + ')');
+      rad.addColorStop(1, 'rgba(' + c.join(',') + ',0)');
+      g.fillStyle = rad;
+      g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    // 亮核
+    const cx = SZ * 0.64, cy = SZ * 0.36;
+    const cg = g.createRadialGradient(cx, cy, 0, cx, cy, SZ * 0.26);
+    cg.addColorStop(0, 'rgba(' + t.core.join(',') + ',0.15)');
+    cg.addColorStop(0.3, 'rgba(' + t.core.join(',') + ',0.07)');
+    cg.addColorStop(1, 'rgba(' + t.nebulas[0].join(',') + ',0)');
+    g.fillStyle = cg;
+    g.fillRect(0, 0, SZ, SZ);
+    nebImg = cv;
+  }
+
+  function setTheme(name, silent) {
+    theme = name;
+    document.body.className = 'theme-' + name;
+    document.querySelectorAll('.skin').forEach(function (el) {
+      el.classList.toggle('on', el.dataset.skin === name);
+    });
+    try { LS.set('aurora-skin', name); } catch (e) {}
+    buildNebula();
+    buildStars();
+    if (!silent) showToast('已切换到「' + ({ galaxy: '星海夜空', aurora: '极光绿', amber: '暖金琥珀' })[name] + '」');
+  }
+
+  function frame(now) {
+    if (!lastT) lastT = now;
+    let dt = Math.min((now - lastT) / 1000, 0.05);
+    lastT = now;
+    time += dt;
+
+    const t = THEMES[theme];
+    const gr = ctx.createLinearGradient(0, 0, W * 0.35, H);
+    gr.addColorStop(0, t.bg[0]);
+    gr.addColorStop(0.42, t.bg[1]);
+    gr.addColorStop(1, t.bg[2]);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = gr;
+    ctx.fillRect(0, 0, W, H);
+
+    if (nebImg) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.save();
+      ctx.translate(W / 2, H * 0.44);
+      ctx.rotate(0.29);
+      const ns = (Math.hypot(W, H) * 1.2) / nebImg.width;
+      ctx.scale(ns, ns);
+      ctx.globalAlpha = 0.55;
+      ctx.drawImage(nebImg, -nebImg.width / 2, -nebImg.height / 2);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < stars.length; i++) {
+      const s = stars[i];
+      s.x += FLOW.x * s.sp * dt;
+      s.y += FLOW.y * s.sp * dt;
+      if (s.x < -R) s.x += R * 2;
+      if (s.y > R) s.y -= R * 2;
+
+      const px = W / 2 + s.x;
+      const py = H / 2 + s.y;
+      if (px < -60 || px > W + 60 || py < -60 || py > H + 60) continue;
+
+      const tw = 0.62 + 0.38 * Math.sin(time * s.tw + s.ph);
+      const a = s.a * (0.55 + tw * 0.6);
+      if (a <= 0.012) continue;
+
+      if (s.glow) {
+        const grr = s.sz * 7;
+        const g2 = ctx.createRadialGradient(px, py, 0, px, py, grr);
+        g2.addColorStop(0, 'rgba(255,255,255,' + Math.min(1, a) + ')');
+        g2.addColorStop(0.12, 'rgba(255,252,240,' + (a * 0.8) + ')');
+        g2.addColorStop(0.32, 'rgba(255,238,204,' + (a * 0.16) + ')');
+        g2.addColorStop(1, 'rgba(255,226,180,0)');
+        ctx.fillStyle = g2;
+        ctx.beginPath(); ctx.arc(px, py, grr, 0, TAU); ctx.fill();
+        continue;
+      }
+      ctx.globalAlpha = Math.min(1, a * 1.1);
+      ctx.fillStyle = s.col;
+      if (s.sz < 0.85) {
+        ctx.fillRect(px - 0.55, py - 0.55, 1.1, 1.1);
+      } else {
+        ctx.beginPath(); ctx.arc(px, py, s.sz * 0.62, 0, TAU); ctx.fill();
+        if (s.sz > 1.5) {
+          const l = s.sz * 5.5;
+          ctx.globalAlpha = Math.min(0.4, a * 0.4);
+          ctx.strokeStyle = s.col; ctx.lineWidth = 0.7;
+          ctx.beginPath();
+          ctx.moveTo(px - l, py); ctx.lineTo(px + l, py);
+          ctx.moveTo(px, py - l); ctx.lineTo(px, py + l);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.globalCompositeOperation = 'source-over';
+    const vg = ctx.createRadialGradient(W / 2, H * 0.48, Math.min(W, H) * 0.3, W / 2, H * 0.48, Math.hypot(W, H) * 0.7);
+    vg.addColorStop(0, 'rgba(2,4,10,0)');
+    vg.addColorStop(1, 'rgba(1,2,6,0.55)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------------- toast ---------------- */
+  const toastEl = document.getElementById('toast');
+  let toastTimer = 0;
+  function showToast(text) {
+    toastEl.textContent = text;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2200);
+  }
+
+  /* ---------------- 皮肤切换 ---------------- */
+  document.getElementById('skins').addEventListener('click', function (e) {
+    const btn = e.target.closest('.skin');
+    if (btn && btn.dataset.skin !== theme) setTheme(btn.dataset.skin);
+  });
+
+  /* ---------------- 心情标签 ---------------- */
+  let mood = '喜欢';
+  document.getElementById('moods').addEventListener('click', function (e) {
+    const btn = e.target.closest('.mood');
+    if (!btn) return;
+    mood = btn.dataset.mood;
+    document.querySelectorAll('.mood').forEach(function (el) {
+      el.classList.toggle('on', el === btn);
+    });
+  });
+
+  /* ---------------- 反馈漂流瓶 ---------------- */
+  const KEY = 'aurora-bottles';
+  function loadBottles() {
+    try { return JSON.parse(LS.get(KEY) || '[]'); } catch (e) { return []; }
+  }
+  function saveBottles(list) {
+    LS.set(KEY, JSON.stringify(list));
+  }
+  function renderBottles() {
+    const list = loadBottles();
+    const box = document.getElementById('bottles');
+    if (!list.length) {
+      box.innerHTML = '<div class="empty">还没有漂流瓶——第一只，由你来投。</div>';
+      return;
+    }
+    // 转义后再拼进 HTML：localStorage 里的内容可能是被改过的，不能直接当 HTML 用
+    const esc = function (s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    };
+    box.innerHTML = list.map(function (b, i) {
+      return '<div class="bottle"><div class="meta"><span class="tag">' +
+        esc(b.mood) + '</span><span>' + esc(b.date) + '</span></div><div class="txt"></div></div>';
+    }).join('');
+    // 用 textContent 写正文，防止注入
+    const nodes = box.querySelectorAll('.bottle .txt');
+    list.forEach(function (b, i) { nodes[i].textContent = b.text; });
+  }
+
+  const fbText = document.getElementById('fbText');
+  const fbSend = document.getElementById('fbSend');
+  fbSend.addEventListener('click', function () {
+    const text = fbText.value.trim();
+    if (!text) {
+      showToast('先写点什么，再投进星海吧');
+      fbText.focus();
+      return;
+    }
+    const list = loadBottles();
+    const d = new Date();
+    const pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    list.unshift({
+      mood: mood,
+      text: text.slice(0, 300),
+      date: d.getFullYear() + '.' + pad(d.getMonth() + 1) + '.' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes())
+    });
+    saveBottles(list.slice(0, 50));
+    fbText.value = '';
+    renderBottles();
+    showToast('漂流瓶已投进星海 ✦');
+  });
+
+  /* ---------------- 启动 ---------------- */
+  resize();
+  buildNebula();
+  requestAnimationFrame(frame);
+
+  window.addEventListener('resize', function () {
+    clearTimeout(window.__rzTimer);
+    window.__rzTimer = setTimeout(resize, 120);
+  });
+
+  // 恢复上次选择的皮肤（?skin=aurora 可指定）
+  try {
+    const q = (location.search.match(/skin=(galaxy|aurora|amber)/) || [])[1];
+    const saved = q || LS.get('aurora-skin');
+    if (saved && THEMES[saved]) setTheme(saved, true);
+  } catch (e) {}
+  renderBottles();
+})();
+</script>
+  <script src="nav.js"></script>
+</body>
+</html>
