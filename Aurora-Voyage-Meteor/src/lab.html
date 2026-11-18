@@ -411,7 +411,14 @@
     const sx = nW / W, sy = nH / H;
     if (typeof bird !== 'undefined' && bird) { bird.x *= sx; bird.y *= sy; }
     if (typeof pipes !== 'undefined' && pipes) {
-      for (const p of pipes) { p.x *= sx; p.top *= sy; p.bottom *= sy; if (p.kind === 'float') p.rockCY *= sy; }
+      for (const p of pipes) {
+        p.x *= sx;
+        if (p.kind === 'float') { p.rockCY *= sy; }
+        else {
+          p.gapTop *= sy; p.gapBottom *= sy;
+          for (const s of p.segs) { s.y0 *= sy; s.y1 *= sy; }
+        }
+      }
     }
 
     W = nW; H = nH;
@@ -764,32 +771,41 @@
     ctx.restore();
   }
 
-  /* 每个障碍组只有两种形态，绝不出现"三块把路堵死"：
-     · pair  —— 上下各一块（2 块），中间通道高度 = pipeGap
-     · float —— 只有一块大陨石，悬在画面正中偏上/偏下的位置（1 块），上下都能绕过去 */
-  function drawMeteorSeg(p, isTop) {
-    const o = rockTex((p.seed | 0) + (isTop ? 0 : 1));
-    if (!o) return;
-    if (p.kind === 'float') {
-      if (!isTop) return;                     // 单颗只画一次，别叠两遍
-      blitRock(o, p.x + PIPE_W / 2, p.rockCY, p.rockW, p.rockH, 0, ((p.seed | 0) & 1) === 0);
-      return;
-    }
-    const segH = isTop ? p.top : (H - p.bottom);
-    if (segH <= 2) return;
+  /* 每个障碍组是 1~3 块陨石，但通道带 [gapTop, gapBottom] 永远空着：
+     · float —— 1 块，悬在画面中央附近，上下都能绕
+     · segs  —— 2 块（上下各一）或 3 块（把空间大的一侧拆成两块），
+                通道高度始终 ≥ pipeGap，飞船必然穿得过去
+     同一侧有多块时，从通道口往屏幕边依次紧贴排列，
+     避免两块之间出现「看着能钻、实际会撞」的假缝。 */
+  function drawRockSide(p, segs, up) {
+    if (!segs.length) return;
     const wMax = Math.min(W * 0.36, spacingFrames * 1.3 * 1.02);
-    // 两块：保持视频里的扁椭圆比例，宽度由段高推、不超过相邻组的水平间隔
-    const w = Math.min(wMax, Math.max(190, segH * 0.95));
-    const h = Math.min(segH + 24, (w / o.a) * 1.22);   // 纵向最多拉 1.22 倍，保住视频里的扁椭圆感
-    const inset = Math.min(18, pipeGap * 0.12);        // 石头向通道口再探一点，视觉缝隙比 gap 更紧
-    const cy = isTop ? (p.top + inset - h / 2) : (p.bottom - inset + h / 2);
-    blitRock(o, p.x + PIPE_W / 2, cy, w, h, 0, ((p.seed | 0) & 1) === 0);
+    const inset = Math.min(18, pipeGap * 0.12);   // 石头朝通道口再探一点，视觉缝隙比 gap 更紧
+    let edge = up ? (p.gapTop + inset) : (p.gapBottom - inset);
+    for (const seg of segs) {
+      const segH = seg.y1 - seg.y0;
+      const o = rockTex((p.seed | 0) + (seg.i || 0));
+      if (!o) continue;
+      // 保持视频里的扁椭圆比例，宽度不超过相邻组的水平间隔
+      const w = Math.min(wMax, Math.max(190, segH * 0.95));
+      const h = Math.min(segH + 24, (w / o.a) * 1.22);
+      const cy = up ? (edge - h / 2) : (edge + h / 2);
+      blitRock(o, p.x + PIPE_W / 2, cy, w, h, 0, ((p.seed | 0) & 1) === 0);
+      edge = up ? (edge - h) : (edge + h);
+    }
   }
 
   function drawPipes() {
     pipes.forEach(p => {
-      drawMeteorSeg(p, true);   // 上段（通道以上）
-      drawMeteorSeg(p, false);  // 下段（通道以下）
+      if (p.kind === 'float') {
+        const o = rockTex(p.seed | 0);
+        if (o) blitRock(o, p.x + PIPE_W / 2, p.rockCY, p.rockW, p.rockH, 0, ((p.seed | 0) & 1) === 0);
+        return;
+      }
+      const upSegs = p.segs.filter(s => s.y1 <= p.gapTop + 0.5).sort((a, b) => b.y0 - a.y0);
+      const downSegs = p.segs.filter(s => s.y0 >= p.gapBottom - 0.5).sort((a, b) => a.y0 - b.y0);
+      drawRockSide(p, upSegs, true);
+      drawRockSide(p, downSegs, false);
     });
   }
   function draw(){
@@ -804,22 +820,42 @@
     const soloW = Math.min(wMax, soloH * oa / 1.22);
     const seed = (Math.random() * 99991) | 0;
     const roll = Math.random();
-    let pipe;
-    if (roll < 0.62) {
-      // 两块：上下各一块，中间留 pipeGap 的通道
-      const gap = Math.min(pipeGap, Math.max(90, H - marginTop - marginBottom - 80));
-      const usable = H - marginBottom - marginTop - gap;
-      const lo = marginTop;
-      const hi = usable > 0 ? marginTop + usable : marginTop;
-      const top = lo + Math.random() * Math.max(0, hi - lo);
-      pipe = {x:W+20, kind:'pair', top:top, bottom:top+gap, w:PIPE_W, passed:false, seed:seed};
-    } else {
-      // 一块：悬在画面中间附近，上下各留一条远大于飞船高度的通道
+    const gap = Math.min(pipeGap, Math.max(90, H - marginTop - marginBottom - 80));
+
+    if (roll < 0.34) {
+      // 1 块：悬在画面中间附近，上下各留一条远大于飞船高度的通道
       const sway = Math.min(H * 0.10, Math.max(0, (H - soloH) / 2 - 60));
       const cy = H / 2 + (Math.random() * 2 - 1) * sway;
-      pipe = {x:W+20, kind:'float', top:0, bottom:H, w:PIPE_W, rockW:soloW, rockH:soloH, rockCY:cy, passed:false, seed:seed};
+      pipes.push({x:W+20, kind:'float', w:PIPE_W, rockW:soloW, rockH:soloH, rockCY:cy, passed:false, seed:seed});
+      return;
     }
-    pipes.push(pipe);
+
+    // 2/3 块：先定一条永不放石头的通道带，再往通道上下填石头
+    const MIN_SEG = 90, SEAM = 12;   // 单块石头的最小段高 / 同侧两块之间的间隔
+    const MAX_SEG = H * 0.55;        // 单段上限：段太高石头只占一小块，屏幕边会留出大块空白
+    // 通道上下两侧都要落在 [MIN_SEG, MAX_SEG] 内
+    const passMin = Math.max(MIN_SEG + gap / 2, H - MAX_SEG - gap / 2, marginTop + gap / 2);
+    const passMax = Math.min(H - MIN_SEG - gap / 2, MAX_SEG + gap / 2, H - marginBottom - gap / 2);
+    const passCY = passMin + Math.random() * Math.max(0, passMax - passMin);
+    const gapTop = passCY - gap / 2;
+    const gapBot = passCY + gap / 2;
+    const upH = gapTop, downH = H - gapBot;
+
+    let segs;
+    if (roll < 0.72 || (upH < 2 * MIN_SEG + SEAM && downH < 2 * MIN_SEG + SEAM)) {
+      // 2 块：上 + 下，通道夹在中间
+      segs = [{y0:0, y1:gapTop, near:true}, {y0:gapBot, y1:H, near:true}];
+    } else if (upH >= downH) {
+      // 3 块：上方空间更大 → 上方拆成两块
+      const h1 = (upH - SEAM) / 2;
+      segs = [{y0:0, y1:h1, near:false}, {y0:h1+SEAM, y1:gapTop, near:true}, {y0:gapBot, y1:H, near:true}];
+    } else {
+      // 3 块：下方空间更大 → 下方拆成两块
+      const h1 = (downH - SEAM) / 2;
+      segs = [{y0:0, y1:gapTop, near:true}, {y0:gapBot, y1:gapBot+h1, near:true}, {y0:gapBot+h1+SEAM, y1:H, near:false}];
+    }
+    segs.forEach((s, i) => { s.i = i; });
+    pipes.push({x:W+20, kind:'segs', segs:segs, gapTop:gapTop, gapBottom:gapBot, w:PIPE_W, passed:false, seed:seed});
   }
   function startGame(){
     state='playing';score=0;frame=0;world=0;pipes=[];
@@ -853,10 +889,11 @@
     for(const p of pipes){
       const hitX=bird.x+bird.r>p.x&&bird.x-bird.r<p.x+p.w;
       if(!hitX)continue;
-      // 两块组：判定到屏幕边（必须穿缝）；单颗组：只判这块石头本身，上下都能绕
+      // 1 块（float）：只判这块石头本身，上下都能绕
+      // 2/3 块（segs）：只要不完全落在通道带里就算撞（通道永远够飞船穿过）
       const hitY = p.kind==='float'
         ? (bird.y+bird.r>p.rockCY-p.rockH/2 && bird.y-bird.r<p.rockCY+p.rockH/2)
-        : (bird.y-bird.r<p.top || bird.y+bird.r>p.bottom);
+        : (bird.y-bird.r<p.gapTop || bird.y+bird.r>p.gapBottom);
       if(hitY)p.hit=true;
     }
   }
