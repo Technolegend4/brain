@@ -783,8 +783,8 @@
      绘制和碰撞都从这里取，保证「看到什么就撞什么」：
      前半段是完整椭圆，石头之间的视觉缝隙就是真缝隙。 */
   function pipeRects(p) {
-    const wMax = Math.min(W * 0.36, spacingFrames * 1.3 * 1.02);
-    const inset = Math.min(18, pipeGap * 0.12);   // 石头朝通道口探一点，画面更紧
+    const wMax = Math.min(W * 0.36, spacingFrames * 1.3 * 0.95);
+    const inset = 0;   // 石头不再探入通道：视觉缝隙 = 判定缝隙 = pipeGap
     const out = [];
     if (p.kind === 'float') {
       out.push({ cx: p.x + PIPE_W / 2, cy: p.rockCY, w: p.rockW, h: p.rockH, o: rockTex(p.seed | 0) });
@@ -835,7 +835,7 @@
   function addPipe(){
     const marginTop = 60, marginBottom = 30;
     const oa = (METEOR_IMG[0] && METEOR_IMG[0].a) || 1.5;
-    const wMax = Math.min(W * 0.36, spacingFrames * 1.3 * 1.02);
+    const wMax = Math.min(W * 0.36, spacingFrames * 1.3 * 0.95);
     // 单颗：吃满横向配额，比贴边那块再大一圈；高度受扁椭圆比例约束
     const soloH = Math.min((wMax / oa) * 1.22, H * 0.44);
     const soloW = Math.min(wMax, soloH * oa / 1.22);
@@ -880,13 +880,17 @@
       // 2 块：上 + 下，通道夹在中间
       segs = [{y0:0, y1:gapTop, near:true}, {y0:gapBot, y1:H, near:true}];
     } else if (upH >= downH && upH >= 2 * MIN_SEG + SEAM) {
-      // 3 块：上方空间更大 → 上方拆成两块
-      const h1 = (upH - SEAM) / 2;
-      segs = [{y0:0, y1:h1, near:false}, {y0:h1+SEAM, y1:gapTop, near:true}, {y0:gapBot, y1:H, near:true}];
+      // 3 块：上方空间更大 → 上方拆成两块，靠通道那块明显更小，一眼能看出是三块
+      const total = upH - SEAM;
+      const near = Math.min(total - MIN_SEG, Math.max(MIN_SEG, total * 0.36));
+      const far = total - near;
+      segs = [{y0:0, y1:far, near:false}, {y0:far+SEAM, y1:gapTop, near:true}, {y0:gapBot, y1:H, near:true}];
     } else {
-      // 3 块：下方空间更大 → 下方拆成两块
-      const h1 = (downH - SEAM) / 2;
-      segs = [{y0:0, y1:gapTop, near:true}, {y0:gapBot, y1:gapBot+h1, near:true}, {y0:gapBot+h1+SEAM, y1:H, near:false}];
+      // 3 块：下方空间更大 → 下方拆成两块，靠通道那块明显更小
+      const total = downH - SEAM;
+      const near = Math.min(total - MIN_SEG, Math.max(MIN_SEG, total * 0.36));
+      const far = total - near;
+      segs = [{y0:0, y1:gapTop, near:true}, {y0:gapBot, y1:gapBot+near, near:true}, {y0:gapBot+near+SEAM, y1:H, near:false}];
     }
     segs.forEach((s, i) => { s.i = i; });
     pipes.push({x:W+20, kind:'segs', rockCount:n, segs:segs, gapTop:gapTop, gapBottom:gapBot, w:PIPE_W, passed:false, seed:seed});
