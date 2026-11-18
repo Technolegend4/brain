@@ -810,6 +810,16 @@
       drawRockSide(p, downSegs, false);
     });
   }
+  // 一段陨石的实际横向范围。石头以 p.x+PIPE_W/2 为中心绘制，宽度由段高决定，
+  // 比 PIPE_W(64) 宽得多（约 190~318），碰撞和计分都必须按真实宽度算。
+  function pipeSpan(p){
+    const wMax = Math.min(W * 0.36, spacingFrames * 1.3 * 1.02);
+    let w;
+    if (p.kind === 'float') w = p.rockW;
+    else { w = 0; for (const s of p.segs) w = Math.max(w, Math.min(wMax, Math.max(190, (s.y1 - s.y0) * 0.95))); }
+    const cx = p.x + PIPE_W / 2;
+    return [cx - w / 2, cx + w / 2];
+  }
   function draw(){
     drawBackground();drawPipes();drawBird();
   }
@@ -898,19 +908,26 @@
     bird.rot=Math.max(-.45,Math.min(.9,bird.vy*.08));
     // 柱子按横向距离生成：上一根离右边缘足够远才生成新的一根，避免重叠重影
     if(!pipes.length||(W-pipes[pipes.length-1].x)>=spacingFrames*1.3)addPipe();
-    pipes.forEach(p=>{p.x-=1.3*step;if(!p.passed&&p.x+p.w<=bird.x-bird.r){p.passed=true;if(!p.hit){score++;$('score').textContent=score;}}});
-    pipes=pipes.filter(p=>p.x>-100);
-    if(bird.y-bird.r<0||bird.y+bird.r>H-30){endGame();}
-    for(const p of pipes){
-      const hitX=bird.x+bird.r>p.x&&bird.x-bird.r<p.x+p.w;
-      if(!hitX)continue;
+    // 计分只看是否「越过」这一段：走通道、从上下绕过去、贴着石头擦过去，都算过；
+    // 但这一段只要碰过石头就不给分。
+    for (const p of pipes) {
+      p.x -= 1.3 * step;
+      const span = pipeSpan(p), spanL = span[0], spanR = span[1];
       // 1 块（float）：只判这块石头本身，上下都能绕
       // 2/3 块（segs）：只要不完全落在通道带里就算撞（通道永远够飞船穿过）
-      const hitY = p.kind==='float'
-        ? (bird.y+bird.r>p.rockCY-p.rockH/2 && bird.y-bird.r<p.rockCY+p.rockH/2)
-        : (bird.y-bird.r<p.gapTop || bird.y+bird.r>p.gapBottom);
-      if(hitY)p.hit=true;
+      if (bird.x + bird.r > spanL && bird.x - bird.r < spanR) {
+        const hitY = p.kind === 'float'
+          ? (bird.y + bird.r > p.rockCY - p.rockH / 2 && bird.y - bird.r < p.rockCY + p.rockH / 2)
+          : (bird.y - bird.r < p.gapTop || bird.y + bird.r > p.gapBottom);
+        if (hitY) p.hit = true;
+      }
+      if (!p.passed && spanR <= bird.x - bird.r) {
+        p.passed = true;
+        if (!p.hit) { score++; $('score').textContent = score; }
+      }
     }
+    pipes = pipes.filter(p => p.x > -100);
+    if (bird.y - bird.r < 0 || bird.y + bird.r > H - 30) { endGame(); }
   }
   // 主循环加保护：任何单帧绘制异常都不能打断 requestAnimationFrame 链
   function loop(t){
