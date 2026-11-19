@@ -1,151 +1,188 @@
-# Brain — Muse EEG 实时脑机接口流水线
+# 星海航行计划 Aurora_Voyage · 统一最新版
 
-从 muse-js 的原始 `eegReadings` 一路走到分类结果与反馈输出的完整实现。
-**全部算法为原生 JavaScript 手写，零第三方依赖**，单个 HTML 文件即可运行。
+## 项目简介
 
-仓库里还有两个独立小应用：
+星海航行计划（Aurora Voyage）是一个用脑电头环眨眼信号控制太空飞船躲避陨石的网页游戏。
 
-- **[Blink Bird](#blink-bird眨眼驱动的-flappy-bird)** —— 把真实采集的脑电数据喂进去，眨眼就能让小鸟振翅。
-- **[定时起跳 Flappy Bird](#定时起跳-flappy-bird实验版)** —— 仓库根目录 `index.html`，零依赖的定时起跳玩法实验版。
+- 硬件：Muse 脑电头环（Muse 2 / S / Athena 均可）
+- 玩法：眨眼一次，飞船向上推进一次，避开迎面而来的陨石
+- 站点：星海主题四页网站（首页 / 浏览 / 实验室 / 反馈）
+
+## 本次整合（2026-11-19）
+
+统一合并 Aurora-Voyage-Scoring、Aurora-Voyage-Scoring-blink 和 Aurora-Voyage-Meteor：
+
+- 初始 30 分；每组障碍首次碰撞扣 10 分，安全通过加 10 分，同组不重复扣分。
+- 仅得分归零时结束；碰到上下边界只限位，不扣分、不结束；重开恢复初始分数和速度。
+- 飞行速度随有效游戏时间逐渐增加，暂停期间不增加。
+- 保留真实眨眼事件的波形尖峰和金色闪光、脑电连接及皮肤设置。
+- 单颗与双颗陨石交替，双颗横向错开，保留通行带；绘制和碰撞共用几何。
+- 新计分使用独立最高分存储键，避免与旧版单颗计分混用。
+
+所有源码在 `src/`，唯一交付入口为本目录的 `Aurora_Voyage.html`。
+
+## 系统架构
 
 ```
-muse-js 原始包(4 通道 × 12 样本)
-   → 带通 + 陷波 → 去伪迹(回归 + FastICA) → FFT 频带特征
-   → 分类器(LDA / SVM / MLP) → 反馈(界面 + HTTP POST)
+眨眼
+  ↓
+Muse Direct（蓝牙采集，输出 OSC）
+  ↓  OSC → 127.0.0.1:8000
+eeg_receiver.py（检测眨眼 0→1 上升沿，并清洗脑电波形）
+  ↓  WebSocket 广播（127.0.0.1:7000）
+网页外壳（Aurora_Voyage.html 接收并转发给游戏）
+  ↓
+flap() 飞船推进
 ```
+
+链路说明：
+
+1. Muse Direct 采集到眨眼动作后，通过蓝牙读取并转成 OSC 消息。
+2. OSC 消息发送到本机 `127.0.0.1:8000`，由 `eeg_receiver.py` 接收。
+3. 接收器对眨眼信号做 0 → 1 上升沿检测（带不应期，避免一次眨眼触发多次），对脑电做去直流 + 高通清洗。
+4. 接收器通过 WebSocket（默认 7000 端口）把眨眼事件与脑电波形广播出去。
+5. 网页外壳收到消息后转发给游戏逻辑，调用 `flap()` 让飞船推进。
 
 ## 快速开始
 
-直接双击打开 **[`outputs/muse-eeg-pipeline.html`](outputs/muse-eeg-pipeline.html)**，无需服务器、无需安装任何依赖。
+### 0. 一键启动（推荐）
 
-1. 点 **▶ 开始采集** —— 左上 6 个流程步骤会随数据流动依次点亮
-2. 点 **🎯 校准** —— 自动采集 4 秒睁眼 + 4 秒闭眼并训练分类器
-3. 观察 **分类输出** —— 闭眼时判为「闭眼 / α 增强」
-4. 点 **👁 注入眨眼** 看去伪迹效果，点 **⚡ 注入工频** 看陷波效果
+Windows 用户直接双击 `一键启动.bat`，它会自动帮你：
 
-> 想看算法对比：关掉「陷波」，PSD 上会立刻竖起 50 Hz 尖峰；关掉「ICA / 回归」，眨眼时波形会出现巨大低频摆动。
+- 启动脑电接收器（独立窗口）
+- 用默认浏览器打开游戏网页 `Aurora_Voyage.html`
 
-## 算法实现
+首次运行会自动安装依赖，请等接收器窗口显示「等待数据...」后，再执行下面的第 3、4 步即可。
 
-| 模块 | 内容 |
-|---|---|
-| **滤波** | RBJ 双二阶 + Transposed DF-II 流式处理，Butterworth 带通 2/4/6/8 阶，50/100 Hz 谐波陷波（Q 可调） |
-| **去伪迹** | 一级：AF7/AF8 作 EOG 代理的多元回归扣除；二级：FastICA（tanh 不动点）+ 峰度/低频占比/眼电相关三重判据剔除成分 |
-| **特征** | Welch PSD；δ/θ/α/β/γ 频带功率、相对功率、α/β 比、谱熵、Hjorth 参数；向量 5 / 20 / 29 维可选 |
-| **分类** | z-score 标准化 → 自适应 PCA 降维 → LDA（正则化闭式解）/ Pegasos SVM / MLP，带留一法交叉验证 |
-| **信号源** | 内置模拟器（1/f 噪声 + α 颤动 + 工频 + 双指数眨眼模板），也支持粘贴真实 muse-js 包或实时接入设备 |
+### 1. 安装 Python 依赖
 
-## 接入真实 Muse 设备
+需要 Python 3.10+。
 
-页面已内置设备入口，逐电极攒齐 4 通道后自动推进流水线：
-
-```js
-import { MuseClient } from 'muse-js';
-const client = new MuseClient();
-await client.connect();
-await client.start();
-client.eegReadings.subscribe(function (reading) {
-  // electrode: 0=TP9 1=AF7 2=AF8 3=TP10，与页面通道顺序一致
-  window.EEG.feedPacket(reading);      // 也可用 feedPackets([...]) 批量喂入
-});
+```bash
+pip install -r requirements.txt
 ```
 
-`feedPacket` 兼容字段别名：通道取 `eegChannel` / `channel` / `electrode`，样本取 `samples` / `values` / `data`。
+### 2. 启动接收器。
 
-离线回放则更简单：把 `eegReadings` 序列 JSON 化后粘贴到页面左侧「粘贴真实 muse-js 包」，点开始采集即可。
+- **Windows**：双击 `start_receiver.bat`（首次运行会自动装依赖）
+- **macOS / Linux**：`./start_receiver.sh`（首次运行会建 `.venv` 虚拟环境）
 
-## 目录结构
+窗口保持开启，不要关闭。
 
-```
-index.html                    定时起跳 Flappy Bird 实验版（根目录，独立可玩）
+### 3. 连接头环
 
-outputs/                      构建产物（可直接运行 / 分享）
-├── muse-eeg-pipeline.html    单文件应用，自包含无外部依赖
-└── muse-eeg-pipeline.md      完整说明文档（算法细节、参数、验证数据）
+在 Muse Direct 中连接头环，把 OSC 输出目标设为 `127.0.0.1:8000`，然后开始发送。
 
-muse-eeg-pipeline/            源码工程
-├── build.ps1                 合并 src → 单个 HTML
-├── src/
-│   ├── index.html            UI 结构与样式
-│   └── js/                   按流水线阶段拆分的 6 个模块
-├── tools/
-│   ├── selfcheck.js          算法数值自检（14 项）
-│   └── smoke-ui.js           端到端 DOM 冒烟测试（48 项）
+> 接收器按 OSC 地址的**后缀**匹配（`/elements/blink`、`/elements/eeg`），
+> 不关心 Muse Direct 给的前缀是什么，所以不用改设备 ID。
 
-blink-flappy/                 眨眼驱动的 Flappy Bird（另见下文）
-├── index.html                工作台：上方游戏 + 下方三通道波形
-├── js/                       检测器、游戏、信号源、装配层
-├── tools/                    自检、行为回归、DOM 冒烟、离线评估
-├── README.md                 使用说明与算法细节
-└── NOTICE.md                 第三方素材许可说明
-```
+### 4. 打开网页
 
-## 重新构建与验证
+- 双击 `Aurora_Voyage.html`（单文件版，直接分发用）
+- 进入「实验室」页，点击「连接 Python」
+- 用鼠标点击画面开始游戏，之后用眨眼控制飞船推进
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File muse-eeg-pipeline\build.ps1
-node muse-eeg-pipeline\tools\selfcheck.js
-node muse-eeg-pipeline\tools\smoke-ui.js
+### 5. 自测（无需头环）
+
+如果你还没有头环，可以先用内置的链路自测脚本验证整套系统是否连通。
+
+1. 先启动接收器（见第 2 步，保持窗口开启）。
+2. 另开一个终端，在项目目录运行：
+
+```bash
+python test_link.py
 ```
 
-## 验证结果
+它会模拟发送一次眨眼和 0.5 秒的脑电数据，验证「OSC → 接收器 → WebSocket → 客户端」是否连通。
 
-**算法自检 14/14 通过**
+预期输出：
 
-| 项目 | 实测 |
-|---|---|
-| 50 Hz 工频衰减 | 61.2 dB |
-| 眨眼去除（回归 → ICA） | 42.6 µV → 10.9 µV → 7.1 µV |
-| 闭眼 vs 睁眼 α 相对功率 | 47% vs 18% |
-| LDA / SVM / MLP 留一法准确率 | 98% / 95% / 95% |
-| 500 次在线推理耗时 | 12 ms |
-
-**页面端到端冒烟 48/48 通过** —— 覆盖实时采集、分析窗口、ICA 表格、一键校准（LDA 训练 94% / LOO 94%）、模型热切换、开关联动、HTTP 反馈、JSON 回放、真实设备接入、状态重置。
-
-## Blink Bird：眨眼驱动的 Flappy Bird
-
-`blink-flappy/` 是一个独立的小应用：**把真实脑电数据输进去，眨眼就让小鸟振翅**。
-
-- **数据**：EEG-EyeBlinks 公开数据集（EEG-IO / EEG-VR / EEG-VV 三组，Fp1/Fp2，250 Hz）
-- **检测**：0.5–8 Hz 带通 → 双阈值状态机（迟滞 + 不应期）→ onset 双闸门
-- **同步**：眨眼事件带强度分（3–10 σ），强度直接映射成振翅升力
-- **可视化**：FP1 / FP2 / 检测分数三条通道，眨眼画成贯穿竖线 + `BLINK` 标记，线宽和色相跟随强度
-- **回放**：1×–8× 调速、进度条、眨眼计数；载入 CSV 后自动连接、自动开局，撞管道 1.5 秒自动重开
-
-全数据集（46 被试 / 2035 次眨眼）离线评估：
-
-| 子集 | 被试 | 召回 | 精确 | F1 |
-|---|---|---|---|---|
-| EEG-IO | 20 | 0.864 | 0.888 | 0.876 |
-| EEG-VR | 13 | 0.928 | 0.913 | 0.920 |
-| EEG-VV | 13 | 0.864 | 0.849 | 0.856 |
-| **合计** | **46** | **0.885** | **0.881** | **0.883** |
-
-直接双击 `blink-flappy/index.html` 即可运行，无需安装依赖；没有硬件时选「合成 EEG」，按空格注入眨眼。
-
-第三方素材与许可见 [`blink-flappy/NOTICE.md`](blink-flappy/NOTICE.md)（游戏玩法参考 `nhooyr/flappybird`，NC 许可，本项目代码为原创）。
-
-## 定时起跳 Flappy Bird（实验版）
-
-根目录 `index.html` 是一个独立的单文件小游戏：**在固定时间节奏下起跳**，用来做节律/反应类实验。
-
-- 纯 HTML + CSS + JavaScript，零依赖，双击即可运行，不需要构建或本地服务器
-- 与 `blink-flappy/` 的区别：这里不接脑电，只做「定时起跳」玩法本身的可玩原型，方便做对照实验
-- 如需本地起一个静态服务（避免 `file://` 限制）：
-
-```powershell
-python -m http.server 8080
-# 浏览器打开 http://localhost:8080/
+```
+[TEST] WebSocket connected to ws://127.0.0.1:7000
+[TEST] Blink signal : PASS (rise=True, fall=True)
+[TEST] EEG data     : PASS (27 batches, 108 samples, sample=[...])
+[TEST] Result       : PASS
 ```
 
-## 能力边界
+看到 `Result : PASS` 就说明接收器与网页之间的数据链路正常，可以接真头环了。
 
-这是一个**状态解码**演示系统，输出为二分类（睁眼 / 闭眼）。它**不是**脑电语义解码器——
-4 通道消费级干电极的信息带宽，不足以支撑把脑电「翻译」成文字或语言，这与调参无关。
-在合理预期内可稳定解码的目标是：睁眼/闭眼、眨眼事件、肌肉活动、专注度/困倦倾向等状态量。
+## 命令行参数
 
-详见 [`outputs/muse-eeg-pipeline.md`](outputs/muse-eeg-pipeline.md) 第 7 节「已知限制」。
+`eeg_receiver.py` 支持以下参数（也可通过 `start_receiver.bat` / `start_receiver.sh` 追加）：
 
-## 许可
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--osc-host` | `127.0.0.1` | OSC 监听地址 |
+| `--osc-port` | `8000` | OSC 监听端口（Muse Direct 输出目标） |
+| `--ws-host` | `127.0.0.1` | WebSocket 监听地址 |
+| `--ws-port` | `7000` | WebSocket 监听端口（网页连接目标） |
+| `--channels` | `4` | 脑电通道数（Muse 2/S = 4，Athena = 5） |
+| `--channel` | `0` | 推给网页画波形的通道序号 |
+| `--batch` | `4` | 每帧合并的样本数 |
+| `--blink-refractory` | `0.11` | 眨眼不应期（秒），防止一次眨眼触发多次 |
+| `-v` / `--verbose` | 关 | 打印每次眨眼 |
 
-仅作实验用途。第三方素材许可见 [`blink-flappy/NOTICE.md`](blink-flappy/NOTICE.md)。
+示例：
+
+```bash
+# Muse Athena（5 通道）+ 端口被占用时换端口
+python eeg_receiver.py --channels 5 --ws-port 7001
+```
+
+网页端对应加 `?port=7001` 即可连到新端口。
+
+## 常见问题
+
+**端口被占用？** 接收器支持换端口：
+
+```bash
+python eeg_receiver.py --osc-port 8001 --ws-port 7001
+```
+
+网页端加 `?port=7001` 即可连到新 WebSocket 端口（如 `Aurora_Voyage.html?port=7001`）。
+
+**Muse Athena 通道数不同？** Athena 是 5 通道，用 `--channels 5`：
+
+```bash
+python eeg_receiver.py --channels 5
+```
+
+**只想推某个通道的波形？** 用 `--channel N`（默认 0）。
+
+**眨眼没反应？** 确认：
+1. 接收器窗口显示「等待数据…」
+2. Muse Direct 的 OSC 目标端口与接收器一致（默认 8000）
+3. 网页「实验室」页已点「连接 Python」，状态显示「已连接」
+
+## 文件说明
+
+| 文件 | 说明 |
+| --- | --- |
+| `Aurora_Voyage.html` | 单文件交付版（由 `build_merged.py` 生成，可直接分发）。 |
+| `eeg_receiver.py` | 脑电接收器：接收 OSC 眨眼/脑电，做上升沿检测与波形清洗，WebSocket 广播。 |
+| `src/` | 四个页面的源文件（`home` / `explore` / `connect` / `lab`）+ 共享导航脚本 `nav.js`。改代码在这里改。 |
+| `build_merged.py` | 把 `src/` 四页打包成单文件 `Aurora_Voyage.html`。 |
+| `test_link.py` | 链路自测脚本：模拟 OSC 数据，验证接收器到 WebSocket 客户端是否连通。 |
+| `start_receiver.bat` / `start_receiver.sh` | 一键启动脚本（Windows / macOS-Linux）。 |
+| `requirements.txt` | Python 依赖（`python-osc`、`websockets`）。 |
+| `.gitignore` | 排除缓存与个人生理数据（`__pycache__/`、`*.pyc`、`*.csv`、`*.edf`、`.venv/` 等）。 |
+
+## 修改后如何重新生成单文件版
+
+```bash
+python build_merged.py
+```
+
+## 注意事项
+
+- Windows 环境需 Python 3.10+。
+- 数据文件（`.csv` / `.edf`）含个人生理数据，已通过 `.gitignore` 排除，请勿提交。
+- 四个源页面在 `src/` 里也可以单独双击打开调试；只有打包成 `Aurora_Voyage.html` 后才是单文件版。
+
+## 多局纪录
+
+结算显示本局过程中的最高分，独立保存跨局历史最高分（实时保存）、已完成局数及最近 20 局最高分，结算只显示放大的本局最高分和历史最高纪录，不展示局数与各局列表。超过历史最高分会显示金色提示和庆祝彩纸；初始赠送的 30 分不触发庆祝。纪录保存在当前浏览器本地，清理浏览器数据会清除纪录。
+
+无已完成对局时历史纪录为“None”，首局结束后才建立纪录；首局不触发破纪录庆祝，后续严格超过已有纪录才庆祝。旧版无对局记录的默认分数不会沿用为纪录。
+
+新版使用独立 V2 纪录存储，不导入旧版默认 100 分或旧版对局；首次打开显示 BEST None，首局结束后开始保存新版纪录。
