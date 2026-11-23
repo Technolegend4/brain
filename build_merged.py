@@ -75,6 +75,8 @@ function show(k){
   }
   f.classList.add("on");
   current=k;
+  var lab=document.getElementById("pg-lab");
+  if(lab && lab.contentWindow) lab.contentWindow.postMessage({pageActive:k==="lab"},"*");
 }
 function route(){
   var k=(location.hash||"#home").slice(1);
